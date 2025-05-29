@@ -1,0 +1,707 @@
+openapi: 3.0.3
+info:
+  title: Bitaxe Miner API
+  description: |
+    REST API for Bitaxe ASIC Bitcoin miners. This API provides comprehensive monitoring and control capabilities for Bitaxe hardware.
+    
+    ## Features
+    - Real-time performance monitoring
+    - System configuration management
+    - Mining statistics and pool information
+    - Hardware status and diagnostics
+    
+    ## Authentication
+    No authentication required. API is accessible over HTTP on local network.
+    
+    ## Rate Limiting
+    No rate limiting enforced, but recommended polling interval is 60 seconds for monitoring applications.
+    
+    ## Compatibility
+    - Bitaxe Gamma (BM1366, BM1370)
+    - Firmware v2.0+
+    - HTTP only (no HTTPS)
+  version: '2.6.0'
+  contact:
+    name: Bitaxe Community
+    url: https://github.com/skot/bitaxe
+  license:
+    name: GPL-3.0
+    url: https://github.com/skot/bitaxe/blob/main/LICENSE
+
+servers:
+  - url: 'http://{miner_ip}:{port}'
+    description: Bitaxe miner local endpoint
+    variables:
+      miner_ip:
+        default: '192.168.1.45'
+        description: IP address of your Bitaxe miner
+        examples:
+          - '192.168.1.45'
+          - '10.0.1.100'
+          - 'bitaxe.local'
+      port:
+        default: '80'
+        description: HTTP port (usually 80)
+        enum:
+          - '80'
+          - '8080'
+
+paths:
+  /api/system/info:
+    get:
+      summary: Get comprehensive system information
+      description: |
+        Returns all available system information including:
+        - Mining performance metrics (hashrate, power, efficiency)
+        - Hardware status (temperatures, voltages, fan speed)
+        - Network information (WiFi, connectivity)
+        - Mining pool configuration and statistics
+        - System details (firmware, uptime, memory)
+        
+        This is the primary endpoint used by monitoring applications.
+      operationId: getSystemInfo
+      tags:
+        - System Information
+      responses:
+        '200':
+          description: System information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemInfo'
+              examples:
+                gamma_miner:
+                  summary: Bitaxe Gamma Response
+                  value:
+                    power: 58.35
+                    voltage: 11906.25
+                    current: 16281.25
+                    temp: 58.0
+                    vrTemp: 45
+                    hashRate: 2372750
+                    bestDiff: "4.29G"
+                    bestNonceDiff: 4292734826
+                    coreVoltage: 1200
+                    coreVoltageActual: 1194
+                    frequency: 525
+                    ssid: "NetworkName"
+                    hostname: "bitaxe"
+                    wifiRSSI: -44
+                    sharesAccepted: 19739
+                    sharesRejected: 6
+                    uptimeSeconds: 212115
+                    ASICModel: "BM1366"
+                    version: "v2.6.0"
+                    boardVersion: "302"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/system/restart:
+    post:
+      summary: Restart the miner
+      description: |
+        Initiates a system restart of the Bitaxe miner. The miner will be unavailable for 30-60 seconds during restart.
+        
+        **Warning:** This will interrupt mining operations temporarily.
+      operationId: restartSystem
+      tags:
+        - System Control
+      responses:
+        '200':
+          description: Restart initiated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "restarting"
+                  message:
+                    type: string
+                    example: "System restart initiated"
+        '500':
+          description: Failed to initiate restart
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/system:
+    patch:
+      summary: Update system configuration
+      description: |
+        Updates system configuration parameters. Changes to some parameters (like frequency, voltage) may require a restart to take effect.
+        
+        **Note:** Only provided parameters will be updated. Omitted parameters remain unchanged.
+      operationId: updateSystemConfig
+      tags:
+        - System Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemConfigUpdate'
+            examples:
+              fan_speed:
+                summary: Update fan speed
+                value:
+                  fanspeed: 75
+              frequency_voltage:
+                summary: Update performance settings
+                value:
+                  frequency: 550
+                  coreVoltage: 1250
+              display_settings:
+                summary: Update display settings
+                value:
+                  flipscreen: 1
+                  invertscreen: 0
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "updated"
+                  message:
+                    type: string
+                    example: "Configuration updated successfully"
+                  restart_required:
+                    type: boolean
+                    description: Whether a restart is required for changes to take effect
+        '400':
+          description: Invalid configuration parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_fanspeed:
+                  summary: Invalid fan speed
+                  value:
+                    error: "Invalid parameter"
+                    message: "fanspeed must be between 0 and 100"
+        '500':
+          description: Failed to update configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/swarm/info:
+    get:
+      summary: Get swarm information (if applicable)
+      description: |
+        Returns information about swarm configuration for miners that support multiple ASIC coordination.
+        
+        **Note:** This endpoint may not be available on all firmware versions.
+      operationId: getSwarmInfo
+      tags:
+        - Advanced Features
+      responses:
+        '200':
+          description: Swarm information retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  swarm_enabled:
+                    type: boolean
+                  swarm_members:
+                    type: integer
+                  coordinator:
+                    type: boolean
+        '404':
+          description: Swarm functionality not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    SystemInfo:
+      type: object
+      description: Complete system information response
+      properties:
+        # Power and Performance
+        power:
+          type: number
+          format: float
+          description: Current power consumption in Watts
+          example: 58.35
+          minimum: 0
+          maximum: 200
+        voltage:
+          type: number
+          format: float
+          description: Input voltage in millivolts
+          example: 11906.25
+        current:
+          type: number
+          format: float
+          description: Current draw in milliamps
+          example: 16281.25
+        hashRate:
+          type: number
+          format: float
+          description: Current hashrate in H/s
+          example: 2372750000
+          minimum: 0
+        
+        # Temperatures
+        temp:
+          type: number
+          format: float
+          description: ASIC temperature in Celsius
+          example: 58.0
+          minimum: 0
+          maximum: 120
+        vrTemp:
+          type: number
+          format: float
+          description: Voltage regulator temperature in Celsius
+          example: 45.0
+          minimum: 0
+          maximum: 120
+        
+        # Hardware Configuration
+        coreVoltage:
+          type: integer
+          description: Target core voltage in millivolts
+          example: 1200
+          minimum: 1000
+          maximum: 1400
+        coreVoltageActual:
+          type: integer
+          description: Measured core voltage in millivolts
+          example: 1194
+        frequency:
+          type: integer
+          description: ASIC frequency in MHz
+          example: 525
+          minimum: 200
+          maximum: 800
+        
+        # Cooling System
+        fanspeed:
+          type: integer
+          description: Fan speed percentage (0-100)
+          example: 35
+          minimum: 0
+          maximum: 100
+        fanrpm:
+          type: integer
+          description: Measured fan speed in RPM
+          example: 5515
+          minimum: 0
+        autofanspeed:
+          type: integer
+          description: Automatic fan speed control (0=off, 1=on)
+          example: 0
+          enum: [0, 1]
+        
+        # Mining Statistics
+        bestDiff:
+          type: string
+          description: Best difficulty share found (human readable)
+          example: "4.29G"
+        bestNonceDiff:
+          type: integer
+          format: int64
+          description: Best difficulty share found (numeric)
+          example: 4292734826
+        bestSessionDiff:
+          type: string
+          description: Best difficulty this session (human readable)
+          example: "3.83M"
+        bestSessionNonceDiff:
+          type: integer
+          format: int64
+          description: Best difficulty this session (numeric)
+          example: 3828108
+        stratumDiff:
+          type: integer
+          description: Current stratum difficulty
+          example: 1000
+        sharesAccepted:
+          type: integer
+          description: Total accepted shares
+          example: 19739
+        sharesRejected:
+          type: integer
+          description: Total rejected shares
+          example: 6
+        sharesRejectedReasons:
+          type: array
+          description: Breakdown of share rejection reasons
+          items:
+            type: object
+            properties:
+              message:
+                type: string
+                example: "Above target"
+              count:
+                type: integer
+                example: 6
+        
+        # Network Configuration
+        ssid:
+          type: string
+          description: WiFi network name
+          example: "NetworkName"
+        macAddr:
+          type: string
+          description: MAC address
+          pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+          example: "C0-FA-38-6A-6E-B2"
+        hostname:
+          type: string
+          description: Device hostname
+          example: "bitaxe"
+        wifiStatus:
+          type: string
+          description: WiFi connection status
+          example: "Connected!"
+        wifiRSSI:
+          type: integer
+          description: WiFi signal strength in dBm
+          example: -44
+          minimum: -100
+          maximum: 0
+        apEnabled:
+          type: integer
+          description: Access Point mode enabled (0=off, 1=on)
+          example: 0
+          enum: [0, 1]
+        
+        # Pool Configuration
+        stratumURL:
+          type: string
+          description: Primary mining pool URL
+          example: "public-pool.io"
+        fallbackStratumURL:
+          type: string
+          description: Fallback mining pool URL
+          example: "solo.ckpool.org"
+        stratumPort:
+          type: integer
+          description: Primary pool port
+          example: 21496
+          minimum: 1
+          maximum: 65535
+        fallbackStratumPort:
+          type: integer
+          description: Fallback pool port
+          example: 3333
+          minimum: 1
+          maximum: 65535
+        stratumUser:
+          type: string
+          description: Mining pool username/address
+          example: "bc1qnp980s5fpp8l94p5cvttmtdqy8rvrq74qly2yrfmzkdsntqzlc5qkc4rkq.bitaxe"
+        fallbackStratumUser:
+          type: string
+          description: Fallback pool username/address
+          example: "bc1qnp980s5fpp8l94p5cvttmtdqy8rvrq74qly2yrfmzkdsntqzlc5qkc4rkq.bitaxe"
+        isUsingFallbackStratum:
+          type: integer
+          description: Currently using fallback pool (0=no, 1=yes)
+          example: 0
+          enum: [0, 1]
+        
+        # System Information
+        uptimeSeconds:
+          type: integer
+          description: System uptime in seconds
+          example: 212115
+          minimum: 0
+        version:
+          type: string
+          description: Firmware version
+          example: "v2.6.0"
+        idfVersion:
+          type: string
+          description: ESP-IDF version
+          example: "v5.4"
+        boardVersion:
+          type: string
+          description: Hardware board version
+          example: "302"
+        runningPartition:
+          type: string
+          description: Currently running firmware partition
+          example: "factory"
+          enum: ["factory", "ota_0", "ota_1"]
+        
+        # Hardware Details
+        ASICModel:
+          type: string
+          description: ASIC chip model
+          example: "BM1366"
+          enum: ["BM1366", "BM1370"]
+        asicCount:
+          type: integer
+          description: Number of ASIC chips
+          example: 1
+        smallCoreCount:
+          type: integer
+          description: Number of small cores per ASIC
+          example: 894
+        
+        # Memory Information
+        isPSRAMAvailable:
+          type: integer
+          description: PSRAM availability (0=no, 1=yes)
+          example: 1
+          enum: [0, 1]
+        freeHeap:
+          type: integer
+          description: Free heap memory in bytes
+          example: 178368
+          minimum: 0
+        
+        # Display Settings
+        flipscreen:
+          type: integer
+          description: Screen flip setting (0=normal, 1=flipped)
+          example: 1
+          enum: [0, 1]
+        invertscreen:
+          type: integer
+          description: Screen invert setting (0=normal, 1=inverted)
+          example: 0
+          enum: [0, 1]
+        
+        # Advanced Settings
+        overheat_mode:
+          type: integer
+          description: Overheat protection mode (0=off, 1=on)
+          example: 0
+          enum: [0, 1]
+        overclockEnabled:
+          type: integer
+          description: Overclocking enabled (0=off, 1=on)
+          example: 0
+          enum: [0, 1]
+        invertfanpolarity:
+          type: integer
+          description: Fan polarity inversion (0=normal, 1=inverted)
+          example: 1
+          enum: [0, 1]
+        maxPower:
+          type: number
+          format: float
+          description: Maximum power limit in Watts
+          example: 40.0
+        nominalVoltage:
+          type: number
+          format: float
+          description: Nominal input voltage
+          example: 12.0
+      
+      required:
+        - power
+        - temp
+        - hashRate
+        - ASICModel
+        - version
+        - uptimeSeconds
+
+    SystemConfigUpdate:
+      type: object
+      description: System configuration update parameters
+      properties:
+        fanspeed:
+          type: integer
+          description: Fan speed percentage (0-100)
+          minimum: 0
+          maximum: 100
+          example: 50
+        frequency:
+          type: integer
+          description: ASIC frequency in MHz
+          minimum: 200
+          maximum: 800
+          example: 550
+        coreVoltage:
+          type: integer
+          description: Core voltage in millivolts
+          minimum: 1000
+          maximum: 1400
+          example: 1250
+        flipscreen:
+          type: integer
+          description: Flip screen display (0=normal, 1=flipped)
+          enum: [0, 1]
+          example: 1
+        invertscreen:
+          type: integer
+          description: Invert screen colors (0=normal, 1=inverted)
+          enum: [0, 1]
+          example: 0
+        autofanspeed:
+          type: integer
+          description: Enable automatic fan speed control (0=off, 1=on)
+          enum: [0, 1]
+          example: 1
+        invertfanpolarity:
+          type: integer
+          description: Invert fan polarity (0=normal, 1=inverted)
+          enum: [0, 1]
+          example: 0
+        stratumURL:
+          type: string
+          description: Primary mining pool URL
+          example: "public-pool.io"
+        stratumPort:
+          type: integer
+          description: Primary mining pool port
+          minimum: 1
+          maximum: 65535
+          example: 21496
+        stratumUser:
+          type: string
+          description: Mining pool username/worker
+          example: "bc1qnp980s5fpp8l94p5cvttmtdqy8rvrq74qly2yrfmzkdsntqzlc5qkc4rkq.bitaxe"
+        fallbackStratumURL:
+          type: string
+          description: Fallback mining pool URL
+          example: "solo.ckpool.org"
+        fallbackStratumPort:
+          type: integer
+          description: Fallback mining pool port
+          minimum: 1
+          maximum: 65535
+          example: 3333
+        fallbackStratumUser:
+          type: string
+          description: Fallback pool username/worker
+          example: "bc1qnp980s5fpp8l94p5cvttmtdqy8rvrq74qly2yrfmzkdsntqzlc5qkc4rkq.bitaxe"
+        ssid:
+          type: string
+          description: WiFi network name
+          example: "NetworkName"
+        wifiPass:
+          type: string
+          description: WiFi password
+          format: password
+          example: "password123"
+        hostname:
+          type: string
+          description: Device hostname
+          pattern: '^[a-zA-Z0-9-]+$'
+          example: "bitaxe"
+
+    Error:
+      type: object
+      description: Error response
+      properties:
+        error:
+          type: string
+          description: Error type or code
+          example: "Invalid parameter"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "fanspeed must be between 0 and 100"
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+      required:
+        - error
+        - message
+
+  responses:
+    NotFound:
+      description: The specified resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Not Found"
+            message: "The requested endpoint is not available"
+    
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Internal Server Error"
+            message: "An unexpected error occurred"
+    
+    BadRequest:
+      description: Bad request - invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Bad Request"
+            message: "Invalid request parameters"
+
+  examples:
+    HighPerformanceMiner:
+      summary: High Performance Bitaxe Gamma
+      description: Example of a well-tuned high-performance miner
+      value:
+        power: 65.2
+        hashRate: 2850750000
+        temp: 62.5
+        frequency: 575
+        coreVoltageActual: 1245
+        fanrpm: 6200
+        sharesAccepted: 25847
+        sharesRejected: 3
+        ASICModel: "BM1370"
+        version: "v2.6.0"
+    
+    EfficiencyOptimized:
+      summary: Efficiency Optimized Setup
+      description: Example of a miner optimized for power efficiency
+      value:
+        power: 45.8
+        hashRate: 2100500000
+        temp: 55.2
+        frequency: 485
+        coreVoltageActual: 1165
+        fanrpm: 4800
+        sharesAccepted: 18234
+        sharesRejected: 2
+        ASICModel: "BM1366"
+        version: "v2.6.0"
+
+tags:
+  - name: System Information
+    description: Retrieve comprehensive system status and performance metrics
+  - name: System Control
+    description: Control system operations like restart
+  - name: System Configuration
+    description: Update system configuration parameters
+  - name: Advanced Features
+    description: Advanced functionality for specialized setups
+
+externalDocs:
+  description: Bitaxe GitHub Repository
+  url: https://github.com/skot/bitaxe
