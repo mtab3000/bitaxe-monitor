@@ -1,3 +1,5 @@
+![Screenshot](./generated_charts/bitaxe_hashrate_optimization.png)
+
 # Bitaxe Monitor & Visualizer
 
 A comprehensive Python toolkit for monitoring and analyzing multiple Bitaxe Gamma ASIC Bitcoin miners. This repository contains two complementary tools that work together to provide real-time monitoring, data logging, and advanced performance analysis.
