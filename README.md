@@ -176,8 +176,19 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Related Projects
 
-- [Bitaxe Hardware](https://github.com/skot/bitaxe) - Original Bitaxe project
-- [AxeOS Firmware](https://github.com/bitaxeorg/axeOS) - Bitaxe firmware
+**🔗 Complete Bitaxe Toolkit:**
+- **[Bitaxe-Hashrate-Benchmark](https://github.com/mtab3000/Bitaxe-Hashrate-Benchmark)** - Performance optimization and parallel benchmarking
+- **[Bitaxe-Temp-Monitor](https://github.com/mtab3000/bitaxe-temp-monitor)** - Intelligent temperature-based auto-tuning
+- **[AxeOS Firmware](https://github.com/bitaxeorg/axeOS)** - Bitaxe firmware
+- **[Bitaxe Hardware](https://github.com/skot/bitaxe)** - Original Bitaxe project
+
+## Workflow Integration
+
+This monitoring tool works perfectly with other Bitaxe utilities:
+
+1. **🔧 Optimize**: Use `Bitaxe-Hashrate-Benchmark` to find best settings
+2. **📊 Monitor**: Use this tool for ongoing fleet oversight  
+3. **🌡️ Automate**: Use `Bitaxe-Temp-Monitor` for hands-free operation
 
 ---
 
