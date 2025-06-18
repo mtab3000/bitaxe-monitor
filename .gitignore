@@ -1,2 +1,17 @@
+# Data files (monitoring outputs - user-specific)
 *.csv
 frequency_voltage_analysis_*.md
+*.png
+generated_charts/
+
+# User configuration files
+config.json
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS generated files
+.DS_Store
+Thumbs.db
