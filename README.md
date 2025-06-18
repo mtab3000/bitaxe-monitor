@@ -1,354 +1,184 @@
-![Screenshot](./generated_charts/bitaxe_hashrate_optimization.png)
+# Multi-Bitaxe Monitor
 
-# Bitaxe Monitor & Visualizer
+A comprehensive Python monitoring tool for multiple Bitaxe miners that displays real-time performance metrics, calculates efficiency, and logs data to CSV.
 
-A comprehensive Python toolkit for monitoring and analyzing multiple Bitaxe Gamma ASIC Bitcoin miners. This repository contains two complementary tools that work together to provide real-time monitoring, data logging, and advanced performance analysis.
+![Multi-Bitaxe Monitor](https://img.shields.io/badge/Python-3.6+-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-## 🚀 Features
+## Features
 
-### 📊 Multi-Bitaxe Monitor (`bitaxe_monitor.py`)
-- **Real-time monitoring** of multiple Bitaxe miners simultaneously
-- **Comprehensive KPI tracking** - 20+ metrics per miner
-- **Clean table display** with status indicators
-- **CSV data logging** for historical analysis
-- **Concurrent polling** using threading for fast updates
-- **Error handling** with offline miner detection
-- **60-second polling intervals** optimized for network efficiency
+🔥 **Real-time Monitoring**
+- Monitor multiple Bitaxe miners simultaneously
+- 30-second polling intervals
+- Concurrent data collection for fast updates
 
-### 📈 CSV Visualizer (`bitaxe_visualizer.py`)
-- **Professional matplotlib graphs** from logged CSV data
-- **5 different visualization types** for comprehensive analysis
-- **Individual miner trends** with statistical summaries
-- **Multi-miner comparisons** on unified charts
-- **Performance optimization recommendations** with exact settings
-- **Efficiency analysis** with correlation studies
-- **High-resolution output** (300 DPI PNG files)
+⚡ **Comprehensive Metrics**
+- Hashrate (actual vs expected) with efficiency calculation
+- Power consumption and J/TH efficiency
+- Temperature monitoring (ASIC + VR)
+- Voltage tracking (set, actual, input)
+- Fan speed and frequency monitoring
+- Pool connection and share statistics
 
-## 📋 Monitored Metrics
+📊 **Smart Analytics**
+- Expected hashrate calculation based on ASIC model and frequency
+- Performance efficiency indicators (🔥 ≥95%, ⚡ ≥85%, ⚠️ <70%)
+- Fleet-wide statistics and averages
+- Historical data logging to CSV
 
-### Core Performance
-- **Hashrate** (GH/s and TH/s) - Mining performance
-- **Power Consumption** (W) - Current power draw
-- **Efficiency** (J/TH) - Power efficiency in Joules per Terahash
+🎯 **Supported Models**
+- Bitaxe Gamma (BM1370) - 1.2 TH/s @ 600MHz
+- Bitaxe Supra (BM1368) - 700 GH/s @ 650MHz  
+- Bitaxe Ultra (BM1366) - 500 GH/s @ 525MHz
+- Bitaxe Max (BM1397) - 400 GH/s @ 450MHz
 
-### Hardware Status  
-- **ASIC Temperature** (°C) - Chip temperature
-- **VR Temperature** (°C) - Voltage regulator temperature
-- **Core Voltage** (V) - Actual ASIC core voltage
-- **Input Voltage** (V) - Supply voltage
-- **Frequency** (MHz) - ASIC clock frequency
-- **Fan Speed** (RPM) - Cooling fan speed
-
-### Mining Statistics
-- **Best Difficulty** - Highest difficulty share found
-- **Session Difficulty** - Best difficulty this session
-- **Accepted/Rejected Shares** - Mining pool statistics
-- **Pool Information** - URL and worker configuration
-
-### System Information
-- **Uptime** - Miner runtime in seconds
-- **WiFi Signal** (dBm) - Network connection strength
-- **Hardware Details** - ASIC model, board version, firmware
-
-## 🛠️ Installation
+## Installation
 
 ### Prerequisites
 - Python 3.6 or higher
-- pip package manager
+- Network access to your Bitaxe miners
 
-### Install Dependencies
+### Quick Start
 ```bash
-# For monitoring only
-pip install requests
+# Clone the repository
+git clone https://github.com/mtab3000/bitaxe-monitor.git
+cd bitaxe-monitor
 
-# For visualization (includes monitoring dependencies)
-pip install requests matplotlib pandas numpy
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure your miners (edit the script)
+nano bitaxe_monitor_refactored.py
+
+# Run the monitor
+python bitaxe_monitor_refactored.py
 ```
 
-### Download Scripts
-```bash
-git clone https://github.com/yourusername/bitaxe-monitor-visualizer.git
-cd bitaxe-monitor-visualizer
-```
+## Configuration
 
-## ⚙️ Configuration
-
-### 1. Configure Your Miners
-Edit the `miners_config` list in both scripts:
+Edit the `miners_config` list in `bitaxe_monitor_refactored.py`:
 
 ```python
 miners_config = [
     {'name': 'Gamma-1', 'ip': '192.168.1.45'},
     {'name': 'Gamma-2', 'ip': '192.168.1.46'},
-    {'name': 'Gamma-3', 'ip': '192.168.1.47'}
+    {'name': 'Gamma-3', 'ip': '192.168.1.47', 'port': 8080},  # Custom port
 ]
 ```
 
-**Configuration Options:**
-- `name` - Custom identifier for your miner
-- `ip` - IP address of your Bitaxe miner
-- `port` - Optional port number (defaults to 80)
-
-### 2. Network Requirements
-- All miners must be accessible on your local network
-- Standard HTTP port 80 access required
-- No authentication or special router configuration needed
-
-## 🎯 Usage
-
-### Step 1: Start Monitoring
-```bash
-# Basic monitoring with clean table display
-python bitaxe_monitor.py
-
-# With detailed individual miner information
-python bitaxe_monitor.py  # Edit show_detailed=True in script
-```
-
-**Sample Monitor Output:**
-```
-🔥 Multi-Bitaxe Summary - 2025-05-29 18:38:49
-=============================================================================================================================
-Miner         Hashrate     Power      Efficiency     ASIC      VR    Core   Input     Freq       Fan
------------------------------------------------------------------------------------------------------------------------------
-🟢 Gamma-1      1.035 TH/s   19.7W   **19.04 J/TH**   59.9°C   57.0°C  1.133V    4.97V   570MHz     2981RPM
-🟢 Gamma-2      1.425 TH/s   19.7W   **13.85 J/TH**   60.2°C   57.0°C  1.126V    5.07V   570MHz     3156RPM
-🟢 Gamma-3      1.019 TH/s   17.3W   **17.00 J/TH**   56.6°C   53.0°C  1.131V    5.11V   570MHz     2157RPM
------------------------------------------------------------------------------------------------------------------------------
-📊 TOTALS       3.479 TH/s   56.8W   **16.32 J/TH**   3/3 miners online
-```
-
-### Step 2: Generate Visualizations
-```bash
-# Automatic CSV detection and all chart types
-python bitaxe_visualizer.py
-
-# Specify CSV file
-python bitaxe_visualizer.py --csv multi_bitaxe_kpis_20250529_183849.csv
-
-# Save charts without displaying
-python bitaxe_visualizer.py --no-show
-
-# Only individual miner trends
-python bitaxe_visualizer.py --individual-only
-
-# Only overview and analysis charts
-python bitaxe_visualizer.py --overview-only
-```
-
-## 📊 Generated Visualizations
-
-### 1. Individual Miner Trends
-**Files:** `[MinerName]_performance_trends.png`
-- Hashrate over time with average line
-- Core voltage stability analysis  
-- ASIC frequency trends
-- Statistical summaries and time ranges
-
-### 2. Multi-Miner Overview
-**File:** `multi_bitaxe_overview.png`
-- Side-by-side hashrate comparison
-- Voltage regulation comparison
-- Frequency scaling comparison
-- Color-coded by miner for easy identification
-
-### 3. Comprehensive Performance Analysis
-**File:** `bitaxe_comprehensive_analysis.png`
-- 9-panel dashboard with time series and correlations
-- Power efficiency trends over time
-- Temperature analysis (ASIC + VR)
-- Fan speed response patterns
-- Advanced correlation analysis
-
-### 4. Hashrate Optimization
-**File:** `bitaxe_hashrate_optimization.png`
-- Optimal frequency settings for maximum hashrate
-- Optimal voltage settings for peak performance
-- Temperature impact on hashrate
-- Exact settings summary with gold star highlights
-
-### 5. Efficiency Optimization
-**File:** `bitaxe_efficiency_optimization.png`
-- Best frequency settings for maximum efficiency
-- Optimal voltage for lowest J/TH
-- Temperature vs efficiency correlation
-- Settings recommendations for power optimization
-
-## 🗂️ File Structure
-
-```
-bitaxe-monitor-visualizer/
-├── bitaxe_monitor.py           # Real-time monitoring script
-├── bitaxe_visualizer.py        # CSV data visualization script
-├── README.md                   # This documentation
-├── multi_bitaxe_kpis_*.csv     # Generated data files (timestamped)
-└── generated_charts/
-    ├── Gamma-1_performance_trends.png
-    ├── Gamma-2_performance_trends.png  
-    ├── Gamma-3_performance_trends.png
-    ├── multi_bitaxe_overview.png
-    ├── bitaxe_comprehensive_analysis.png
-    ├── bitaxe_hashrate_optimization.png
-    └── bitaxe_efficiency_optimization.png
-```
-
-## 📈 Data Analysis Workflow
-
-### 1. **Data Collection Phase** (Monitor)
-```bash
-python bitaxe_monitor.py
-# Let run for several hours/days to collect baseline data
-# CSV files are automatically timestamped and saved
-```
-
-### 2. **Analysis Phase** (Visualizer)
-```bash
-python bitaxe_visualizer.py
-# Generates all chart types from most recent CSV
-# Provides optimization recommendations based on actual performance
-```
-
-### 3. **Optimization Phase** (Apply Settings)
-- Review optimization charts for best settings
-- Apply recommended frequency/voltage to miners via web interface
-- Continue monitoring to verify improvements
-
-### 4. **Continuous Monitoring**
-- Run monitor continuously for ongoing data collection
-- Generate new visualizations periodically to track changes
-- Use trend analysis for predictive maintenance
-
-## 🔧 Advanced Usage
-
-### Custom Polling Intervals
-Modify `time.sleep(60)` in the monitor script:
+### Optional: Manual Expected Hashrate Override
 ```python
-time.sleep(30)   # Poll every 30 seconds
-time.sleep(120)  # Poll every 2 minutes
+expected_hashrates = {
+    'Gamma-1': 1200,  # Force expected hashrate to 1200 GH/s
+    'Gamma-2': 1150,  # Custom target for specific miner
+}
 ```
 
-### Adding More Miners
-Simply extend the configuration list:
-```python
-miners_config = [
-    {'name': 'Gamma-1', 'ip': '192.168.1.45'},
-    {'name': 'Gamma-2', 'ip': '192.168.1.46'},
-    {'name': 'Gamma-3', 'ip': '192.168.1.47'},
-    {'name': 'Gamma-4', 'ip': '192.168.1.48'},  # Add more miners
-    {'name': 'Gamma-5', 'ip': '192.168.1.49'}
-]
-```
+## Usage
 
-### Integration with Other Tools
-CSV data can be imported into:
-- **Excel/LibreOffice** for custom analysis
-- **Grafana** for real-time dashboards
-- **InfluxDB** for time-series storage
-- **Custom Python scripts** for automated analysis
-
-## 🚨 Troubleshooting
-
-### Common Issues
-
-**"Connection refused" or timeout errors:**
-- Verify miner IP addresses are correct
-- Ensure miners are powered on and connected to network
-- Check that miners are accessible via web browser
-- Verify firewall settings
-
-**"No module named 'requests'" or similar:**
+### Basic Monitoring
 ```bash
-pip install requests matplotlib pandas numpy
+python bitaxe_monitor_refactored.py
 ```
 
-**"No CSV files found":**
-- Run the monitor script first to generate data
-- Ensure you're in the correct directory
-- Check that CSV files have the expected naming format
+### With Detailed View
+Edit the script and set `show_detailed=True` for individual miner details.
 
-**Incorrect voltage readings:**
-- Script uses `coreVoltageActual` for core voltage (~1.2V)
-- Uses `voltage` field for input voltage (~12V)
-- Values are automatically converted from mV to V
+### Example Output
+```
+🔥 Multi-Bitaxe Summary - 2025-06-18 14:29:38
+=====================================================================================
+ Miner     Hash(TH)  Power  FREQ    SET V   J/TH  Eff%   Temp   Fan
+---------------------------------------------------------------------------
+ 🟢 Gamma-1   1.026    15W  503MHz  1.020V  14.3  102🔥  60.12  4094
+ 🟢 Gamma-2   1.018    15W  503MHz  1.020V  14.7  101🔥  60.12  3385
+ 🟢 Gamma-3   1.092    14W  506MHz  1.020V  12.5  108🔥  59.75  2638
+---------------------------------------------------------------------------
+ 📊 TOTALS   3.136    43W    ---     ---    13.8  104🔥  60.00  3372
+=====================================================================================
 
-### Performance Optimization
+📊 Additional Info:
+   Gamma-1: VR:52.0°C  ActV:1.001V  InV:5.14V  Pool:taborsky.de
+   Gamma-2: VR:52.0°C  ActV:0.988V  InV:5.10V  Pool:taborsky.de
+   Gamma-3: VR:54.0°C  ActV:0.998V  InV:5.15V  Pool:taborsky.de
 
-**Memory Usage:**
-- Monitor: Very low, only stores current readings
-- Visualizer: Scales with CSV file size, typically under 100MB
+💡 Expected hashrate from BM1370 specs + frequency
+```
 
-**Network Impact:**
-- One HTTP request per miner per polling interval
-- Default 60-second intervals minimize network overhead
-- Concurrent requests reduce total polling time
+## Data Logging
 
-**Scalability:**
-- Tested with 10+ miners simultaneously
-- Linear scaling with number of miners
-- No performance degradation observed
+The monitor automatically creates timestamped CSV files with comprehensive metrics:
+- `multi_bitaxe_kpis_YYYYMMDD_HHMMSS.csv`
 
-## 🤝 Contributing
+### CSV Columns
+- Timestamps and miner identification
+- Hashrate (actual, expected, efficiency %)
+- Power metrics (watts, J/TH efficiency)
+- Temperatures (ASIC, VR)
+- Voltages (set, actual, input)
+- Network and pool information
+- Hardware details (ASIC model, firmware, etc.)
 
-We welcome contributions! Areas for improvement:
+## API Endpoints Used
 
-### Monitor Enhancements
-- Additional Bitaxe API endpoints
-- Database integration (SQLite, PostgreSQL)
-- Web dashboard interface
-- Alert/notification system
-- Historical trend analysis
+The monitor uses the following Bitaxe API endpoint:
+- `GET /api/system/info` - Comprehensive system information
 
-### Visualizer Enhancements
-- Interactive plots with Plotly
-- Real-time updating charts
-- Machine learning performance predictions
-- Custom chart configurations
-- Export to different formats
+## Efficiency Calculation
 
-### General Improvements
-- Docker containerization
-- Automated deployment scripts
-- Unit tests and CI/CD
-- Documentation improvements
-- Performance optimizations
+Expected hashrate is calculated using:
+```
+Expected GH/s = Base Hashrate × (Current Frequency / Base Frequency)
+```
 
-## 📊 Performance Notes
+Base specifications per ASIC:
+- **BM1370**: 1200 GH/s @ 600MHz
+- **BM1368**: 700 GH/s @ 650MHz
+- **BM1366**: 500 GH/s @ 525MHz
+- **BM1397**: 400 GH/s @ 450MHz
 
-- **Monitor Resource Usage**: <1% CPU, <50MB RAM
-- **Visualizer Processing**: Handles 10,000+ data points efficiently
-- **Chart Generation**: ~5-10 seconds for all charts
-- **Network Overhead**: Minimal, ~1KB per miner per poll
-- **Storage**: ~1MB per day per miner for CSV data
+## Troubleshooting
 
-## 🛡️ Security Considerations
+### Connection Issues
+- Verify miner IP addresses and network connectivity
+- Check firewall settings
+- Ensure miners are powered on and responding
 
-- Scripts use **HTTP only** (standard Bitaxe API)
-- **No authentication** required or stored
-- **Local network access** only
-- **No external data transmission**
-- **Read-only operations** on miners
+### Performance Issues
+- Monitor shows collection time warnings if polling takes >30 seconds
+- Reduce number of concurrent miners if network is slow
+- Check for network latency issues
 
-## 📜 License
+### Display Issues
+- Ensure terminal supports UTF-8 for emoji display
+- Use `show_detailed=False` for cleaner output in simple terminals
 
-This project is open source under the MIT License. Feel free to modify and distribute.
+## Contributing
 
-## 🙏 Acknowledgments
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-- **Bitaxe Team** for creating amazing open-source mining hardware
-- **Community Contributors** for testing and feedback
-- **Python Ecosystem** (matplotlib, pandas, requests) for excellent libraries
+### Development Setup
+```bash
+git clone https://github.com/mtab3000/bitaxe-monitor.git
+cd bitaxe-monitor
+pip install -r requirements.txt
+```
 
-## 📞 Support
+## License
 
-For issues and questions:
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-- **Script bugs**: Create an issue on GitHub
-- **Bitaxe hardware**: Consult official Bitaxe documentation
-- **Network connectivity**: Check your local network setup
-- **Feature requests**: Open a GitHub discussion
+## Acknowledgments
+
+- Built for the Bitaxe open-source mining community
+- Supports all Bitaxe hardware variants
+- Inspired by the need for comprehensive fleet monitoring
+
+## Related Projects
+
+- [Bitaxe Hardware](https://github.com/skot/bitaxe) - Original Bitaxe project
+- [AxeOS Firmware](https://github.com/bitaxeorg/axeOS) - Bitaxe firmware
 
 ---
 
-**Happy Mining!** ⛏️💰
-
-*Monitor your miners like a pro with comprehensive insights and optimization recommendations.*
+**Made with ❤️ for the Bitcoin mining community**

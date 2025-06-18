@@ -254,7 +254,7 @@ class MultiBitaxeMonitor:
         for miner in self.miners:
             print(f"   - {miner['name']} ({miner['ip']})")
         print(f"📁 Data will be saved to: {self.csv_filename}")
-        print(f"🔄 Polling every 60 seconds...")
+        print(f"🔄 Polling every 30 seconds...")
         print("Press Ctrl+C to stop\n")
         
         try:
@@ -267,7 +267,7 @@ class MultiBitaxeMonitor:
                 
                 self.log_to_csv(all_kpis)
                 
-                time.sleep(60)
+                time.sleep(30)
                 
         except KeyboardInterrupt:
             print(f"\n\n🛑 Monitoring stopped by user")

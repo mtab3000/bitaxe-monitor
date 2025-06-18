@@ -1,0 +1,29 @@
+{
+  "miners": [
+    {
+      "name": "Gamma-1",
+      "ip": "192.168.1.45",
+      "port": 80
+    },
+    {
+      "name": "Gamma-2", 
+      "ip": "192.168.1.46",
+      "port": 80
+    },
+    {
+      "name": "Gamma-3",
+      "ip": "192.168.1.47",
+      "port": 80
+    }
+  ],
+  "settings": {
+    "poll_interval": 30,
+    "show_detailed": false,
+    "csv_output": true
+  },
+  "expected_hashrates": {
+    "Gamma-1": 1200,
+    "Gamma-2": 1150,
+    "Gamma-3": 1100
+  }
+}
