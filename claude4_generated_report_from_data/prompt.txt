@@ -1,0 +1,23 @@
+i have been running this benchmark against my 3 miners: https://github.com/mtab3000/Bitaxe-Hashrate-Benchmark
+i also monitored in parallel the data via: https://github.com/mtab3000/bitaxe-monitor
+all result files provided here
+
+dont confuse set voltage with actual measured voltage. this results in voltage drop.
+
+i want to identify the best settings set voltage and set frequency for each miner regarding:
+variance of hashrate (lower better)
+efficency (higher better, lower J/THs better)
+max performance hashrate
+
+cooling is no problem
+pls also take into consideration the voltage drop and analyze the effects on stability of hashrate / variance.
+
+also eliminate the 4 most variant metrics for each set of frequency + voltage for each miner to normalize the data from monitoring https://github.com/mtab3000/bitaxe-monitor.
+the miners are also always restarted, when new voltage or frequency are set. remove also these invalid metrics from data.
+
+secondary important: ideal setting would be also low regarding fan noise. fanrate below 50 or 60% is good enough.
+so i am looking for stable hashrate (low variance) between 450 and 550 mhz frequency and highest efficency.
+
+pls present graphically in 3d-graphs the relevant metrics for each miner.
+x axis frequency, y-axis voltage set, z axis (maybe a pillar) normalized hashrate.
+or a heatmap with above scheme.
