@@ -2097,7 +2097,8 @@ class WebServer:
                 analytics = self.collector.variance_tracker.get_miner_analytics(miner_name, days)
                 return jsonify(analytics)
             except Exception as e:
-                return jsonify({'error': str(e)}), 500
+                logging.error("Error in variance analytics: %s", str(e))
+                return jsonify({'error': 'An internal error has occurred.'}), 500
         
         @self.app.route('/api/variance/report/<miner_name>')
         def api_variance_report(miner_name):
@@ -2113,7 +2114,8 @@ class WebServer:
                     'analysis_days': days
                 })
             except Exception as e:
-                return jsonify({'error': str(e)}), 500
+                logging.error("Error generating variance report: %s", str(e))
+                return jsonify({'error': 'An internal error has occurred.'}), 500
         
         @self.app.route('/api/variance/summary')
         def api_variance_summary():
