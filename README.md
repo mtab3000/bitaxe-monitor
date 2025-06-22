@@ -66,8 +66,6 @@ A comprehensive Python monitoring tool for multiple Bitaxe miners with real-time
 
 ## Installation
 
-## Installation
-
 ### Prerequisites
 - Python 3.8 or higher
 - Network access to your Bitaxe miners
