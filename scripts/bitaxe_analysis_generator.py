@@ -25,6 +25,23 @@ import numpy as np
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+def convert_to_json_serializable(obj):
+    """Convert numpy types to JSON-serializable Python types"""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    elif isinstance(obj, dict):
+        return {k: convert_to_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_json_serializable(v) for v in obj]
+    else:
+        return obj
+
 class BitaxeAnalyzer:
     """Analyzes Bitaxe monitoring data and generates comprehensive reports"""
     
@@ -32,6 +49,17 @@ class BitaxeAnalyzer:
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
+        
+        # Configuration options
+        self.min_measurements = 5
+        self.export_csv = False
+        
+        # Validate directories
+        if not self.data_dir.exists():
+            logger.warning(f"Data directory does not exist: {self.data_dir}")
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            
+        logger.info(f"Initialized analyzer: data='{self.data_dir}', output='{self.output_dir}'")
         
     def find_latest_csv(self) -> Optional[Path]:
         """Find the most recent CSV file in the data directory"""
@@ -48,25 +76,61 @@ class BitaxeAnalyzer:
     def load_and_filter_data(self, csv_file: Path, hours: int = 24) -> pd.DataFrame:
         """Load CSV data and filter for specified time window"""
         try:
+            logger.info(f"Loading data from: {csv_file}")
             df = pd.read_csv(csv_file)
             logger.info(f"Loaded {len(df)} records from {csv_file}")
             
-            # Convert timestamp to datetime
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            if df.empty:
+                logger.warning("CSV file is empty")
+                return pd.DataFrame()
+            
+            # Validate required columns
+            required_columns = ['timestamp', 'miner_name', 'set_voltage_v', 'frequency_mhz', 
+                              'hashrate_th', 'efficiency_j_th']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                logger.error(f"Missing required columns: {missing_columns}")
+                return pd.DataFrame()
+            
+            # Convert timestamp to datetime with error handling
+            try:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+            except Exception as e:
+                logger.error(f"Failed to parse timestamps: {e}")
+                return pd.DataFrame()
             
             # Filter for last N hours
             cutoff_time = datetime.now() - timedelta(hours=hours)
             df_filtered = df[df['timestamp'] >= cutoff_time].copy()
             
             logger.info(f"Filtered to {len(df_filtered)} records from last {hours} hours")
+            
+            if df_filtered.empty:
+                logger.warning(f"No data found within the last {hours} hours")
+            
             return df_filtered
             
+        except FileNotFoundError:
+            logger.error(f"CSV file not found: {csv_file}")
+            return pd.DataFrame()
+        except pd.errors.EmptyDataError:
+            logger.error(f"CSV file is empty: {csv_file}")
+            return pd.DataFrame()
         except Exception as e:
             logger.error(f"Error loading data: {e}")
             return pd.DataFrame()
     
     def analyze_miner_performance(self, df: pd.DataFrame, miner_name: str) -> Dict:
         """Analyze performance metrics for a specific miner"""
+        # Check if dataframe is empty or missing required columns
+        if df.empty:
+            return {"error": f"No data available"}
+            
+        required_columns = ['miner_name', 'set_voltage_v', 'frequency_mhz', 'hashrate_th', 'efficiency_j_th']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            return {"error": f"Missing required columns: {missing_columns}"}
+        
         miner_data = df[df['miner_name'] == miner_name].copy()
         
         if miner_data.empty:
@@ -90,8 +154,8 @@ class BitaxeAnalyzer:
         # Calculate variance as percentage
         grouped['hashrate_variance_pct'] = (grouped['hashrate_th_std'] / grouped['hashrate_th_mean'] * 100).round(1)
         
-        # Only include combinations with sufficient data points (at least 5 measurements)
-        grouped = grouped[grouped['hashrate_th_count'] >= 5].copy()
+        # Only include combinations with sufficient data points
+        grouped = grouped[grouped['hashrate_th_count'] >= self.min_measurements].copy()
         
         if grouped.empty:
             return {"error": f"Insufficient data for analysis of {miner_name}"}
@@ -129,7 +193,7 @@ class BitaxeAnalyzer:
                     'efficiency_j_th': best_efficiency['efficiency_j_th_mean'],
                     'variance_pct': best_efficiency['hashrate_variance_pct'],
                     'fan_percent': best_efficiency['fan_speed_percent_mean'],
-                    'is_quiet': best_efficiency['fan_speed_percent_mean'] <= 60,
+                    'is_quiet': bool(best_efficiency['fan_speed_percent_mean'] <= 60),
                     'actual_voltage_v': best_efficiency['actual_voltage_v_mean']
                 },
                 'best_stability': {
@@ -139,7 +203,7 @@ class BitaxeAnalyzer:
                     'efficiency_j_th': best_stability['efficiency_j_th_mean'],
                     'variance_pct': best_stability['hashrate_variance_pct'],
                     'fan_percent': best_stability['fan_speed_percent_mean'],
-                    'is_quiet': best_stability['fan_speed_percent_mean'] <= 60,
+                    'is_quiet': bool(best_stability['fan_speed_percent_mean'] <= 60),
                     'actual_voltage_v': best_stability['actual_voltage_v_mean']
                 },
                 'best_hashrate': {
@@ -149,7 +213,7 @@ class BitaxeAnalyzer:
                     'efficiency_j_th': best_hashrate['efficiency_j_th_mean'],
                     'variance_pct': best_hashrate['hashrate_variance_pct'],
                     'fan_percent': best_hashrate['fan_speed_percent_mean'],
-                    'is_quiet': best_hashrate['fan_speed_percent_mean'] <= 60,
+                    'is_quiet': bool(best_hashrate['fan_speed_percent_mean'] <= 60),
                     'actual_voltage_v': best_hashrate['actual_voltage_v_mean']
                 },
                 'best_balanced': {
@@ -159,7 +223,7 @@ class BitaxeAnalyzer:
                     'efficiency_j_th': best_balanced['efficiency_j_th_mean'],
                     'variance_pct': best_balanced['hashrate_variance_pct'],
                     'fan_percent': best_balanced['fan_speed_percent_mean'],
-                    'is_quiet': best_balanced['fan_speed_percent_mean'] <= 60,
+                    'is_quiet': bool(best_balanced['fan_speed_percent_mean'] <= 60),
                     'actual_voltage_v': best_balanced['actual_voltage_v_mean']
                 }
             },
@@ -609,7 +673,7 @@ class BitaxeAnalyzer:
 
     <script>
         // Data for JavaScript visualizations
-        const analysisData = """ + json.dumps(js_data) + """;
+        const analysisData = """ + json.dumps(convert_to_json_serializable(js_data)) + """;
         
         // Enhanced 3D Surface Plot Generation
         function create3DSurface(containerId, title, minerKey, zField, colorScale, zTitle) {
@@ -725,6 +789,48 @@ class BitaxeAnalyzer:
 
         return html_template
 
+    def export_analysis_to_csv(self, analyses: List[Dict], hours: int) -> None:
+        """Export analysis results to CSV format"""
+        if not self.export_csv:
+            return
+            
+        logger.info("Exporting analysis data to CSV...")
+        
+        # Prepare data for CSV export
+        csv_data = []
+        
+        for analysis in analyses:
+            if 'error' in analysis:
+                continue
+                
+            miner_name = analysis['miner_name']
+            recs = analysis['recommendations']
+            
+            # Add each recommendation type as a row
+            for rec_type, rec_data in recs.items():
+                csv_data.append({
+                    'miner_name': miner_name,
+                    'recommendation_type': rec_type,
+                    'set_voltage_mv': rec_data['set_voltage_mv'],
+                    'frequency_mhz': rec_data['frequency_mhz'],
+                    'hashrate_th': rec_data['hashrate_th'],
+                    'efficiency_j_th': rec_data['efficiency_j_th'],
+                    'variance_pct': rec_data['variance_pct'],
+                    'fan_percent': rec_data['fan_percent'],
+                    'is_quiet': rec_data['is_quiet'],
+                    'actual_voltage_v': rec_data['actual_voltage_v']
+                })
+        
+        if csv_data:
+            df = pd.DataFrame(csv_data)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            csv_file = self.output_dir / f"bitaxe_recommendations_{timestamp}.csv"
+            
+            df.to_csv(csv_file, index=False)
+            logger.info(f"Recommendations exported to: {csv_file}")
+        else:
+            logger.warning("No data available for CSV export")
+
     def run_analysis(self, hours: int = 24) -> None:
         """Run complete analysis and generate HTML report"""
         logger.info(f"Starting Bitaxe analysis for last {hours} hours")
@@ -732,28 +838,60 @@ class BitaxeAnalyzer:
         # Find latest CSV file
         csv_file = self.find_latest_csv()
         if not csv_file:
-            logger.error("No CSV data found")
+            logger.error("No CSV data found - ensure the monitor has been running")
+            logger.info("Run the monitor first to collect data: python src/bitaxe_monitor.py")
             return
         
         # Load and filter data
         df = self.load_and_filter_data(csv_file, hours)
         if df.empty:
             logger.error("No data available for analysis")
+            logger.info(f"Try increasing --hours parameter or ensure monitor has been running for at least {hours} hours")
             return
         
-        # Get unique miners
+        # Get unique miners and show summary
         miners = df['miner_name'].unique()
         logger.info(f"Found miners: {list(miners)}")
         
-        # Analyze each miner
+        # Show data summary
+        total_records = len(df)
+        time_span = df['timestamp'].max() - df['timestamp'].min()
+        logger.info(f"Analysis dataset: {total_records} records over {time_span}")
+        
+        # Analyze each miner with progress reporting
         analyses = []
-        for miner in sorted(miners):
-            logger.info(f"Analyzing {miner}...")
+        for i, miner in enumerate(sorted(miners), 1):
+            logger.info(f"Analyzing {miner}... ({i}/{len(miners)})")
+            
             analysis = self.analyze_miner_performance(df, miner)
             analyses.append(analysis)
+            
+            # Show progress summary
+            if 'error' not in analysis:
+                unique_settings = analysis['unique_settings']
+                total_measurements = analysis['total_measurements']
+                logger.info(f"  -> {unique_settings} unique settings, {total_measurements} measurements")
+            else:
+                logger.warning(f"  -> {analysis['error']}")
+        
+        # Show analysis summary
+        successful_analyses = [a for a in analyses if 'error' not in a]
+        failed_analyses = [a for a in analyses if 'error' in a]
+        
+        logger.info(f"Analysis summary: {len(successful_analyses)} successful, {len(failed_analyses)} failed")
+        
+        if not successful_analyses:
+            logger.error("No miners could be analyzed successfully")
+            return
         
         # Generate HTML report
+        logger.info("Generating comprehensive HTML report...")
         html_content = self.generate_html_report(analyses, hours)
+        
+        # Export to CSV if requested
+        if self.export_csv:
+            logger.info("Exporting analysis data to CSV...")
+            self.export_analysis_to_csv(analyses, hours)
         
         # Save report
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -762,19 +900,72 @@ class BitaxeAnalyzer:
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(html_content)
         
-        logger.info(f"Analysis complete! Report saved to: {output_file}")
+        # Show completion summary
+        logger.info("=" * 50)
+        logger.info("ANALYSIS COMPLETE!")
+        logger.info(f"Report saved to: {output_file}")
         logger.info(f"Open in browser: file://{output_file.absolute()}")
+        
+        if self.export_csv:
+            csv_files = list(self.output_dir.glob("*recommendations*.csv"))
+            if csv_files:
+                latest_csv = max(csv_files, key=lambda f: f.stat().st_mtime)
+                logger.info(f"CSV export saved to: {latest_csv}")
+        
+        logger.info("=" * 50)
 
 def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser(description='Generate Bitaxe performance analysis report')
-    parser.add_argument('--hours', type=int, default=24, help='Hours of data to analyze (default: 24)')
-    parser.add_argument('--data-dir', type=str, default='../data', help='Data directory path')
-    parser.add_argument('--output-dir', type=str, default='../generated_charts', help='Output directory path')
+    parser = argparse.ArgumentParser(
+        description='Generate Bitaxe performance analysis report',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                              # Analyze last 24 hours
+  %(prog)s --hours 12                   # Analyze last 12 hours  
+  %(prog)s --hours 48 --verbose         # Analyze last 48 hours with debug output
+  %(prog)s --data-dir ./data --hours 6  # Custom data directory
+        """
+    )
+    
+    parser.add_argument('--hours', type=int, default=24, 
+                       help='Hours of data to analyze (default: 24)')
+    parser.add_argument('--data-dir', type=str, default='../data', 
+                       help='Data directory path (default: ../data)')
+    parser.add_argument('--output-dir', type=str, default='../generated_charts', 
+                       help='Output directory path (default: ../generated_charts)')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                       help='Enable verbose debug output')
+    parser.add_argument('--min-measurements', type=int, default=5,
+                       help='Minimum measurements per setting combination (default: 5)')
+    parser.add_argument('--export-csv', action='store_true',
+                       help='Export analysis data to CSV format')
     
     args = parser.parse_args()
     
+    # Set logging level
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.debug("Debug mode enabled")
+    
+    # Validate arguments
+    if args.hours <= 0:
+        logger.error("Hours must be positive")
+        sys.exit(1)
+        
+    if args.min_measurements <= 0:
+        logger.error("Minimum measurements must be positive")
+        sys.exit(1)
+    
+    logger.info(f"Starting analysis with settings:")
+    logger.info(f"  Hours: {args.hours}")
+    logger.info(f"  Data directory: {args.data_dir}")
+    logger.info(f"  Output directory: {args.output_dir}")
+    logger.info(f"  Min measurements: {args.min_measurements}")
+    
     analyzer = BitaxeAnalyzer(args.data_dir, args.output_dir)
+    analyzer.min_measurements = args.min_measurements
+    analyzer.export_csv = args.export_csv
     analyzer.run_analysis(args.hours)
 
 if __name__ == "__main__":
