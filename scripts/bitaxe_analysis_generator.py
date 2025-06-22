@@ -45,8 +45,13 @@ def convert_to_json_serializable(obj):
 class BitaxeAnalyzer:
     """Analyzes Bitaxe monitoring data and generates comprehensive reports"""
     
-    def __init__(self, data_dir: str = "../data", output_dir: str = "../generated_charts"):
-        self.data_dir = Path(data_dir)
+    def __init__(self, data_dir: str = None, output_dir: str = "../generated_charts"):
+        # Smart data directory detection
+        if data_dir is None:
+            self.data_dirs = self._detect_data_directories()
+        else:
+            self.data_dirs = [Path(data_dir)]
+            
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         
@@ -54,23 +59,82 @@ class BitaxeAnalyzer:
         self.min_measurements = 5
         self.export_csv = False
         
-        # Validate directories
-        if not self.data_dir.exists():
-            logger.warning(f"Data directory does not exist: {self.data_dir}")
-            self.data_dir.mkdir(parents=True, exist_ok=True)
+        # Column mapping for different CSV formats
+        self.column_mapping = {
+            'set_voltage_v': ['set_voltage_v', 'core_voltage_set_v'],
+            'frequency_mhz': ['frequency_mhz'],
+            'hashrate_th': ['hashrate_th'],
+            'efficiency_j_th': ['efficiency_j_th', 'efficiency_jth'],
+            'actual_voltage_v': ['actual_voltage_v', 'core_voltage_actual_v'],
+            'power_w': ['power_w'],
+            'asic_temp_c': ['asic_temp_c', 'temperature_c'],
+            'fan_speed_rpm': ['fan_speed_rpm'],
+            'fan_speed_percent': ['fan_speed_percent']
+        }
             
-        logger.info(f"Initialized analyzer: data='{self.data_dir}', output='{self.output_dir}'")
+        logger.info(f"Initialized analyzer: data_dirs={[str(d) for d in self.data_dirs]}, output='{self.output_dir}'")
+        
+    def _detect_data_directories(self) -> List[Path]:
+        """Detect possible data directories in order of preference"""
+        possible_dirs = []
+        
+        # Current working directory (for when run from main directory)
+        cwd = Path.cwd()
+        possible_dirs.append(cwd)
+        
+        # Parent directory (for when run from scripts directory) 
+        parent_dir = cwd.parent
+        possible_dirs.append(parent_dir)
+        
+        # Traditional data directory relative to scripts
+        possible_dirs.append(Path("../data"))
+        
+        # Absolute data directory relative to parent
+        possible_dirs.append(parent_dir / "data")
+        
+        # Docker data directory (if specified in environment)
+        docker_data_dir = os.getenv('DATA_DIR')
+        if docker_data_dir:
+            possible_dirs.append(Path(docker_data_dir))
+            
+        # Filter to existing directories and log findings
+        existing_dirs = []
+        for dir_path in possible_dirs:
+            if dir_path.exists():
+                existing_dirs.append(dir_path)
+                logger.debug(f"Found data directory: {dir_path}")
+            else:
+                logger.debug(f"Data directory not found: {dir_path}")
+                
+        if not existing_dirs:
+            # Create default data directory
+            default_dir = Path("../data")
+            default_dir.mkdir(parents=True, exist_ok=True)
+            existing_dirs.append(default_dir)
+            logger.warning(f"No data directories found, created: {default_dir}")
+            
+        return existing_dirs
         
     def find_latest_csv(self) -> Optional[Path]:
-        """Find the most recent CSV file in the data directory"""
-        csv_files = list(self.data_dir.glob("*.csv"))
-        if not csv_files:
-            logger.error(f"No CSV files found in {self.data_dir}")
+        """Find the most recent CSV file across all data directories"""
+        all_csv_files = []
+        
+        # Search all possible data directories
+        for data_dir in self.data_dirs:
+            if data_dir.exists():
+                csv_files = list(data_dir.glob("*.csv"))
+                for csv_file in csv_files:
+                    logger.debug(f"Found CSV: {csv_file} (size: {csv_file.stat().st_size} bytes)")
+                all_csv_files.extend(csv_files)
+        
+        if not all_csv_files:
+            logger.error(f"No CSV files found in any data directories: {[str(d) for d in self.data_dirs]}")
             return None
         
         # Sort by modification time and return the latest
-        latest_file = max(csv_files, key=lambda f: f.stat().st_mtime)
-        logger.info(f"Using data file: {latest_file}")
+        latest_file = max(all_csv_files, key=lambda f: f.stat().st_mtime)
+        logger.info(f"Using most recent data file: {latest_file}")
+        logger.info(f"File size: {latest_file.stat().st_size} bytes, modified: {datetime.fromtimestamp(latest_file.stat().st_mtime)}")
         return latest_file
         
     def load_and_filter_data(self, csv_file: Path, hours: int = 24) -> pd.DataFrame:
@@ -84,12 +148,16 @@ class BitaxeAnalyzer:
                 logger.warning("CSV file is empty")
                 return pd.DataFrame()
             
-            # Validate required columns
+            # Map column names to standardized format
+            df = self._standardize_columns(df)
+            
+            # Validate required columns after mapping
             required_columns = ['timestamp', 'miner_name', 'set_voltage_v', 'frequency_mhz', 
                               'hashrate_th', 'efficiency_j_th']
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
                 logger.error(f"Missing required columns: {missing_columns}")
+                logger.info(f"Available columns: {list(df.columns)}")
                 return pd.DataFrame()
             
             # Convert timestamp to datetime with error handling
@@ -107,6 +175,7 @@ class BitaxeAnalyzer:
             
             if df_filtered.empty:
                 logger.warning(f"No data found within the last {hours} hours")
+                logger.info(f"Data time range: {df['timestamp'].min()} to {df['timestamp'].max()}")
             
             return df_filtered
             
@@ -119,6 +188,26 @@ class BitaxeAnalyzer:
         except Exception as e:
             logger.error(f"Error loading data: {e}")
             return pd.DataFrame()
+    
+    def _standardize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Standardize column names to expected format"""
+        original_columns = list(df.columns)
+        
+        for standard_name, possible_names in self.column_mapping.items():
+            for possible_name in possible_names:
+                if possible_name in df.columns and standard_name not in df.columns:
+                    df = df.rename(columns={possible_name: standard_name})
+                    logger.debug(f"Mapped column: {possible_name} -> {standard_name}")
+                    break
+        
+        # Add missing columns with default values if needed
+        if 'fan_speed_percent' not in df.columns and 'fan_speed_rpm' in df.columns:
+            # Estimate fan percentage (assuming max RPM around 6000)
+            df['fan_speed_percent'] = (df['fan_speed_rpm'] / 6000 * 100).clip(0, 100)
+            logger.debug("Generated fan_speed_percent from fan_speed_rpm")
+        
+        logger.debug(f"Column mapping: {original_columns} -> {list(df.columns)}")
+        return df
     
     def analyze_miner_performance(self, df: pd.DataFrame, miner_name: str) -> Dict:
         """Analyze performance metrics for a specific miner"""
@@ -921,17 +1010,27 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                              # Analyze last 24 hours
+  %(prog)s                              # Analyze last 24 hours (auto-detect data location)
   %(prog)s --hours 12                   # Analyze last 12 hours  
   %(prog)s --hours 48 --verbose         # Analyze last 48 hours with debug output
   %(prog)s --data-dir ./data --hours 6  # Custom data directory
+
+Data Location:
+  The script automatically searches for CSV files in multiple locations:
+  1. Current working directory (when run from main project directory)
+  2. Parent directory (when run from scripts subdirectory)  
+  3. ../data directory (traditional location)
+  4. Docker DATA_DIR environment variable (if set)
+  
+  This makes it work whether you run it from the main directory or scripts directory,
+  and whether you're using Docker or running directly.
         """
     )
     
     parser.add_argument('--hours', type=int, default=24, 
                        help='Hours of data to analyze (default: 24)')
-    parser.add_argument('--data-dir', type=str, default='../data', 
-                       help='Data directory path (default: ../data)')
+    parser.add_argument('--data-dir', type=str, default=None, 
+                       help='Data directory path (default: auto-detect)')
     parser.add_argument('--output-dir', type=str, default='../generated_charts', 
                        help='Output directory path (default: ../generated_charts)')
     parser.add_argument('--verbose', '-v', action='store_true',
