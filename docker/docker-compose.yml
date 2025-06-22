@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  bitaxe-monitor:
+    build: .
+    container_name: bitaxe-monitor
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    environment:
+      # Miner Configuration (comma-separated)
+      - MINER_NAMES=Gamma-1,Gamma-2,Gamma-3
+      - MINER_IPS=192.168.1.45,192.168.1.46,192.168.1.47
+      - MINER_PORTS=80,80,80
+      
+      # Monitor Settings
+      - POLL_INTERVAL=60
+      - WEB_PORT=8080
+      - DATA_FILE=/app/data/bitaxe_monitor_data.csv
+      
+      # Optional: Expected hashrates (GH/s) - leave empty for auto-detection
+      - EXPECTED_HASHRATES=
+      
+      # Optional: Enable detailed logging
+      - SHOW_DETAILED=false
+    
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Create named volumes for easier management
+volumes:
+  bitaxe_data:
+    driver: local
+  bitaxe_config:
+    driver: local

@@ -12,6 +12,9 @@ Features:
 - CSV data logging for historical analysis
 - Automatic ASIC model detection and expected hashrate calculation
 - Visual alerts for efficiency and variance issues
+- Multiple chart types: hashrate, efficiency, variance, voltage
+- Background alerts for low efficiency
+- Persistent charts that never disappear
 
 Author: mtab3000
 License: MIT
@@ -98,20 +101,20 @@ class HashrateHistory:
     """Manages historical hashrate data for variance calculations"""
     
     def __init__(self):
-        # Store tuples of (timestamp, hashrate_gh) for each miner
+        # Store tuples of (timestamp, hashrate_gh, efficiency_pct, voltage_v) for each miner
         self.history = defaultdict(deque)
         self.max_history_seconds = 600  # Keep 10 minutes of history
     
-    def add_sample(self, miner_name, timestamp, hashrate_gh):
-        """Add a hashrate sample for a miner"""
+    def add_sample(self, miner_name, timestamp, hashrate_gh, efficiency_pct=0, voltage_v=0):
+        """Add a sample for a miner"""
         history = self.history[miner_name]
         
         # Convert timestamp string to datetime if needed
         if isinstance(timestamp, str):
             timestamp = datetime.fromisoformat(timestamp)
         
-        # Add new sample
-        history.append((timestamp, hashrate_gh))
+        # Add new sample with additional metrics
+        history.append((timestamp, hashrate_gh, efficiency_pct, voltage_v))
         
         # Remove old samples beyond max history
         cutoff_time = timestamp - timedelta(seconds=self.max_history_seconds)
@@ -130,7 +133,7 @@ class HashrateHistory:
         
         # Collect samples within window
         samples = []
-        for timestamp, hashrate in history:
+        for timestamp, hashrate, _, _ in history:
             if timestamp >= cutoff_time:
                 samples.append(hashrate)
         
@@ -161,7 +164,7 @@ class HashrateHistory:
         current_time = history[-1][0]
         cutoff_time = current_time - timedelta(seconds=window_seconds)
         
-        count = sum(1 for timestamp, _ in history if timestamp >= cutoff_time)
+        count = sum(1 for timestamp, _, _, _ in history if timestamp >= cutoff_time)
         return count
     
     def get_history_data(self, miner_name, window_seconds=600):
@@ -174,11 +177,13 @@ class HashrateHistory:
         cutoff_time = current_time - timedelta(seconds=window_seconds)
         
         data = []
-        for timestamp, hashrate in history:
+        for timestamp, hashrate, efficiency, voltage in history:
             if timestamp >= cutoff_time:
                 data.append({
                     'time': timestamp.isoformat(),
-                    'hashrate': hashrate
+                    'hashrate': hashrate,
+                    'efficiency': efficiency,
+                    'voltage': voltage
                 })
         
         return data
@@ -399,9 +404,15 @@ class MetricsCollector:
         
         metrics = self._parse_system_data(miner_config, timestamp_str, system_data)
         
-        # Add hashrate sample to history and calculate variance
+        # Add sample to history and calculate variance
         if metrics.status == 'ONLINE':
-            self.hashrate_history.add_sample(miner_config.name, timestamp, metrics.hashrate_gh)
+            self.hashrate_history.add_sample(
+                miner_config.name, 
+                timestamp, 
+                metrics.hashrate_gh,
+                metrics.hashrate_efficiency_pct,
+                metrics.core_voltage_actual_v
+            )
             
             # Calculate variance for different windows
             metrics.hashrate_variance_60s = self.hashrate_history.calculate_variance(miner_config.name, 60)
@@ -535,8 +546,12 @@ class DataLogger:
     
     def __init__(self, filename=None):
         if filename is None:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = "multi_bitaxe_kpis_{}.csv".format(timestamp)
+            # Check for Docker environment variable
+            data_file = os.getenv('DATA_FILE')
+            if data_file:
+                filename = data_file
+            else:
+                filename = "bitaxe_monitor_data.csv"  # Fixed filename - always append to same file
         
         self.filename = filename
         self._setup_csv()
@@ -574,12 +589,12 @@ class Display:
     def show_summary(metrics_list):
         """Display summary table of all miners"""
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print("\n🔥 Multi-Bitaxe Summary - {}".format(timestamp))
-        print("=" * 105)
+        print("\n>> Multi-Bitaxe Summary - {}".format(timestamp))
+        print("=" * 140)
         
-        # Enhanced table with variance info
-        print(" Miner     Hash(TH)  Power  FREQ    SET V   J/TH  Eff%   Temp   Fan    σ60s   σ300s  σ600s")
-        print("-" * 105)
+        # Enhanced table with voltage/frequency info and all variance windows
+        print(" Miner     Hash(TH)  Power  FREQ    SET V   ACT V   J/TH  Eff%   Temp   Fan    s60s   s300s  s600s  Variance  Uptime")
+        print("-" * 140)
         
         total_hashrate_th = 0
         total_expected_th = 0
@@ -588,15 +603,15 @@ class Display:
         
         for metrics in metrics_list:
             if metrics.status == 'ONLINE':
-                # Format efficiency with icon
+                # Format efficiency with ASCII symbols
                 if metrics.expected_hashrate_gh > 0:
                     eff_pct = metrics.hashrate_efficiency_pct
                     if eff_pct >= 95:
-                        eff_display = "{:3.0f}🔥".format(eff_pct)
+                        eff_display = "{:3.0f}!".format(eff_pct)  # Excellent
                     elif eff_pct >= 85:
-                        eff_display = "{:3.0f}⚡".format(eff_pct)
+                        eff_display = "{:3.0f}*".format(eff_pct)  # Good
                     elif eff_pct < 70:
-                        eff_display = "{:3.0f}⚠️".format(eff_pct)
+                        eff_display = "{:3.0f}!".format(eff_pct)  # Warning
                     else:
                         eff_display = "{:3.0f}%".format(eff_pct)
                 else:
@@ -607,23 +622,38 @@ class Display:
                     if stddev is None:
                         return "   -  "
                     elif stddev > 50:  # High variance warning
-                        return "{:5.1f}⚠".format(stddev)
+                        return "{:5.1f}!".format(stddev)
                     else:
                         return "{:5.1f} ".format(stddev)
                 
-                print(" 🟢 {:<7} {:>7.3f}   {:>3.0f}W  {:>4}MHz {:>5.3f}V {:>5.1f}  {:<6} {:>5.2f}  {:>4.0f}  {} {} {}".format(
+                # Format variance rating
+                variance_rating = ""
+                if metrics.hashrate_stddev_60s is not None:
+                    if metrics.hashrate_stddev_60s < 20:
+                        variance_rating = "STABLE"
+                    elif metrics.hashrate_stddev_60s < 40:
+                        variance_rating = "MEDIUM"
+                    else:
+                        variance_rating = "HIGH!"
+                else:
+                    variance_rating = "  -   "
+                
+                print(" ON  {:<7} {:>7.3f}   {:>3.0f}W  {:>4}MHz {:>5.3f}V {:>5.3f}V {:>5.1f}  {:<6} {:>5.2f}  {:>4.0f}  {} {} {}  {:<6} {}".format(
                     metrics.miner_name,
                     metrics.hashrate_th,
                     metrics.power_w,
                     metrics.frequency_mhz,
                     metrics.core_voltage_set_v,
+                    metrics.core_voltage_actual_v,
                     metrics.efficiency_jth,
                     eff_display,
                     metrics.temperature_c,
                     metrics.fan_speed_rpm,
                     format_stddev(metrics.hashrate_stddev_60s),
                     format_stddev(metrics.hashrate_stddev_300s),
-                    format_stddev(metrics.hashrate_stddev_600s)
+                    format_stddev(metrics.hashrate_stddev_600s),
+                    variance_rating,
+                    metrics._format_uptime()
                 ))
                 
                 total_hashrate_th += metrics.hashrate_th
@@ -631,9 +661,9 @@ class Display:
                 total_power += metrics.power_w
                 online_count += 1
             else:
-                print(" 🔴 {:<7} OFFLINE".format(metrics.miner_name))
+                print(" OFF {:<7} OFFLINE".format(metrics.miner_name))
         
-        print("-" * 105)
+        print("-" * 140)
         
         if online_count > 0:
             avg_efficiency_jth = total_power / total_hashrate_th if total_hashrate_th > 0 else 0
@@ -643,15 +673,15 @@ class Display:
             if total_expected_th > 0:
                 fleet_efficiency = (total_hashrate_th / total_expected_th * 100)
                 if fleet_efficiency >= 95:
-                    fleet_eff_display = "{:3.0f}🔥".format(fleet_efficiency)
+                    fleet_eff_display = "{:3.0f}!".format(fleet_efficiency)
                 elif fleet_efficiency >= 85:
-                    fleet_eff_display = "{:3.0f}⚡".format(fleet_efficiency)
+                    fleet_eff_display = "{:3.0f}*".format(fleet_efficiency)
                 else:
                     fleet_eff_display = "{:3.0f}%".format(fleet_efficiency)
             else:
                 fleet_eff_display = "N/A"
             
-            print(" 📊 TOTALS   {:>7.3f}   {:>3.0f}W    ---   ---   {:>5.1f}  {:<6} {:>5.2f}  {:>4.0f}".format(
+            print(" SUM TOTALS   {:>7.3f}   {:>3.0f}W    ---     ---     ---   {:>5.1f}  {:<6} {:>5.2f}  {:>4.0f}".format(
                 total_hashrate_th,
                 total_power,
                 avg_efficiency_jth,
@@ -660,24 +690,23 @@ class Display:
                 avg_fan
             ))
         else:
-            print(" ❌ ALL OFF")
+            print(" ALL MINERS OFFLINE")
         
-        print("=" * 105)
+        print("=" * 140)
         print()
         
         # Additional info including variance details
         if online_count > 0:
-            print("📊 Additional Info:")
+            print(">> Additional Info:")
             for metrics in metrics_list:
                 if metrics.status == 'ONLINE':
                     variance_info = ""
                     if metrics.hashrate_stddev_60s is not None and metrics.hashrate_stddev_60s > 30:
-                        variance_info = " ⚠️ High variance!"
+                        variance_info = " [HIGH VARIANCE!]"
                     
-                    print("   {}: VR:{:.1f}°C  ActV:{:.3f}V  InV:{:.2f}V  Pool:{}{}".format(
+                    print("   {}: VR:{:.1f}C  InputV:{:.2f}V  Pool:{}{}".format(
                         metrics.miner_name,
                         metrics.vr_temperature_c,
-                        metrics.core_voltage_actual_v, 
                         metrics.input_voltage_v,
                         metrics.pool_url.split('/')[-1] if metrics.pool_url else 'N/A',
                         variance_info
@@ -685,8 +714,8 @@ class Display:
             print()
         
         # Show legend
-        print("💡 Legend: σ = Standard Deviation (GH/s) | 60s/300s/600s windows")
-        print("   ⚠️ = High variance warning (σ > 50 GH/s)")
+        print(">> Legend: s = Standard Deviation (GH/s) | 60s/300s/600s windows | SET V = Set Voltage | ACT V = Actual Voltage")
+        print("   ! = High value/warning | * = Good performance | STABLE/MEDIUM/HIGH = Variance rating")
         print()
     
     @staticmethod
@@ -696,54 +725,54 @@ class Display:
             if metrics.status != 'ONLINE':
                 continue
             
-            print("\n🔥 {} ({}) - {}".format(
+            print("\n>> {} ({}) - {}".format(
                 metrics.miner_name, metrics.miner_ip, metrics.timestamp[:19]))
             print("=" * 60)
-            print("⚡ Hashrate:        {:.2f} GH/s ({:.3f} TH/s)".format(
+            print("Hashrate:        {:.2f} GH/s ({:.3f} TH/s)".format(
                 metrics.hashrate_gh, metrics.hashrate_th))
             if metrics.expected_hashrate_gh > 0:
-                print("🎯 Expected:        {:.2f} GH/s ({:.3f} TH/s) - {:.1f}% efficiency".format(
+                print("Expected:        {:.2f} GH/s ({:.3f} TH/s) - {:.1f}% efficiency".format(
                     metrics.expected_hashrate_gh, metrics.expected_hashrate_th, metrics.hashrate_efficiency_pct))
             
             # Variance information
-            print("\n📊 Hashrate Variance:")
+            print("\nHashrate Variance:")
             if metrics.hashrate_variance_60s is not None:
-                print("   60s:  σ²={:.2f}, σ={:.2f} GH/s".format(
+                print("   60s:  s²={:.2f}, s={:.2f} GH/s".format(
                     metrics.hashrate_variance_60s, metrics.hashrate_stddev_60s))
             if metrics.hashrate_variance_300s is not None:
-                print("   300s: σ²={:.2f}, σ={:.2f} GH/s".format(
+                print("   300s: s²={:.2f}, s={:.2f} GH/s".format(
                     metrics.hashrate_variance_300s, metrics.hashrate_stddev_300s))
             if metrics.hashrate_variance_600s is not None:
-                print("   600s: σ²={:.2f}, σ={:.2f} GH/s".format(
+                print("   600s: s²={:.2f}, s={:.2f} GH/s".format(
                     metrics.hashrate_variance_600s, metrics.hashrate_stddev_600s))
             
-            print("\n🔌 Power:           {:.1f} W".format(metrics.power_w))
-            print("⚙️  Efficiency:      {:.1f} J/TH".format(metrics.efficiency_jth))
-            print("🌡️  Temperature:     {:.1f}°C (ASIC) / {:.1f}°C (VR)".format(
+            print("\nPower:           {:.1f} W".format(metrics.power_w))
+            print("Efficiency:      {:.1f} J/TH".format(metrics.efficiency_jth))
+            print("Temperature:     {:.1f}C (ASIC) / {:.1f}C (VR)".format(
                 metrics.temperature_c, metrics.vr_temperature_c))
-            print("💨 Fan Speed:       {} RPM".format(metrics.fan_speed_rpm))
-            print("⚡ Core Voltage:    {:.3f}V (Set) / {:.3f}V (Actual)".format(
+            print("Fan Speed:       {} RPM".format(metrics.fan_speed_rpm))
+            print("Core Voltage:    {:.3f}V (Set) / {:.3f}V (Actual)".format(
                 metrics.core_voltage_set_v, metrics.core_voltage_actual_v))
-            print("🔋 Input Voltage:   {:.2f}V".format(metrics.input_voltage_v))
-            print("📡 Frequency:       {} MHz".format(metrics.frequency_mhz))
-            print("🎯 Best Diff:       {:,}".format(metrics.best_diff))
-            print("📊 Session Diff:    {:,}".format(metrics.session_diff))
-            print("✅ Accepted:        {}".format(metrics.accepted_shares))
-            print("❌ Rejected:        {}".format(metrics.rejected_shares))
-            print("⏰ Uptime:          {:,} seconds".format(metrics.uptime_s))
-            print("📶 WiFi RSSI:       {} dBm".format(metrics.wifi_rssi))
-            print("🏊 Pool:            {}".format(metrics.pool_url))
-            print("👷 Worker:          {}".format(metrics.worker_name))
-            print("🔧 ASIC Model:      {}".format(metrics.asic_model))
-            print("🏗️  Board Version:   {}".format(metrics.board_version))
-            print("💾 Firmware:        {}".format(metrics.firmware_version))
+            print("Input Voltage:   {:.2f}V".format(metrics.input_voltage_v))
+            print("Frequency:       {} MHz".format(metrics.frequency_mhz))
+            print("Best Diff:       {:,}".format(metrics.best_diff))
+            print("Session Diff:    {:,}".format(metrics.session_diff))
+            print("Accepted:        {}".format(metrics.accepted_shares))
+            print("Rejected:        {}".format(metrics.rejected_shares))
+            print("Uptime:          {:,} seconds ({})".format(metrics.uptime_s, metrics._format_uptime()))
+            print("WiFi RSSI:       {} dBm".format(metrics.wifi_rssi))
+            print("Pool:            {}".format(metrics.pool_url))
+            print("Worker:          {}".format(metrics.worker_name))
+            print("ASIC Model:      {}".format(metrics.asic_model))
+            print("Board Version:   {}".format(metrics.board_version))
+            print("Firmware:        {}".format(metrics.firmware_version))
 
-# HTML template for web interface
+# Enhanced HTML template with stacked charts and mobile/desktop toggle
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Bitaxe Monitor</title>
+    <title>Bitaxe Monitor - Enhanced Persistent</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
@@ -753,26 +782,120 @@ HTML_TEMPLATE = '''
             padding: 20px;
             background: #f5f5f5;
             color: #333;
+            transition: background-color 0.5s ease;
+        }
+        body.efficiency-alert {
+            background: #ffebee !important;
+            animation: pulse-red 2s infinite;
+        }
+        @keyframes pulse-red {
+            0% { background-color: #ffebee; }
+            50% { background-color: #ffcdd2; }
+            100% { background-color: #ffebee; }
         }
         .container {
-            max-width: 1400px;
+            max-width: 1800px;
             margin: 0 auto;
         }
         h1 {
             color: #2c3e50;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+        .view-controls {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .view-toggle {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 0 10px;
+        }
+        .view-toggle.active {
+            background: #28a745;
+        }
+        .view-toggle:hover {
+            opacity: 0.9;
         }
         .update-time {
             color: #7f8c8d;
             font-size: 14px;
             margin-bottom: 20px;
+            text-align: center;
         }
-        .stats-grid {
+        .alert-banner {
+            background: #f44336;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+            display: none;
+        }
+        .alert-banner.show {
+            display: block;
+        }
+        
+        /* Desktop View */
+        .desktop-view .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px;
             margin-bottom: 30px;
         }
+        .desktop-view .miners-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+            gap: 20px;
+        }
+        .desktop-view .chart-container {
+            height: 200px;
+            margin-bottom: 15px;
+        }
+        
+        /* Mobile View */
+        .mobile-view .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .mobile-view .miners-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+        .mobile-view .chart-container {
+            height: 150px;
+            margin-bottom: 10px;
+        }
+        .mobile-view .stat-card {
+            padding: 10px;
+        }
+        .mobile-view .stat-value {
+            font-size: 18px;
+        }
+        .mobile-view .miner-card {
+            padding: 15px;
+        }
+        .mobile-view .metric-row {
+            padding: 4px 0;
+            font-size: 12px;
+        }
+        .mobile-view .voltage-info {
+            padding: 8px;
+            margin-top: 8px;
+        }
+        .mobile-view .voltage-row {
+            font-size: 11px;
+        }
+        
         .stat-card {
             background: white;
             border-radius: 8px;
@@ -789,11 +912,6 @@ HTML_TEMPLATE = '''
             font-size: 24px;
             font-weight: bold;
             margin-top: 5px;
-        }
-        .miners-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 20px;
         }
         .miner-card {
             background: white;
@@ -829,7 +947,7 @@ HTML_TEMPLATE = '''
         .metric-row {
             display: flex;
             justify-content: space-between;
-            padding: 8px 0;
+            padding: 6px 0;
             border-bottom: 1px solid #ecf0f1;
         }
         .metric-row:last-child {
@@ -837,9 +955,11 @@ HTML_TEMPLATE = '''
         }
         .metric-label {
             color: #7f8c8d;
+            font-size: 13px;
         }
         .metric-value {
             font-weight: 500;
+            font-size: 13px;
         }
         .efficiency-high {
             color: #27ae60;
@@ -854,13 +974,35 @@ HTML_TEMPLATE = '''
             color: #e74c3c;
         }
         .chart-container {
-            margin-top: 15px;
-            height: 150px;
             position: relative;
+            background: white;
+            border: 1px solid #ecf0f1;
+            border-radius: 8px;
+            padding: 10px;
+        }
+        .chart-title {
+            font-size: 12px;
+            font-weight: bold;
+            color: #666;
+            margin-bottom: 5px;
+            text-align: center;
         }
         canvas {
             width: 100% !important;
             height: 100% !important;
+        }
+        .voltage-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            border-left: 4px solid #007bff;
+        }
+        .voltage-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+            font-size: 12px;
         }
         .footer {
             text-align: center;
@@ -869,17 +1011,30 @@ HTML_TEMPLATE = '''
             font-size: 12px;
         }
         @media (max-width: 768px) {
-            .miners-grid {
+            .desktop-view .miners-grid {
                 grid-template-columns: 1fr;
+            }
+            body {
+                padding: 10px;
             }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body>
+<body class="desktop-view">
     <div class="container">
-        <h1>🔥 Bitaxe Monitor</h1>
+        <h1>Bitaxe Monitor - Enhanced Persistent</h1>
+        
+        <div class="view-controls">
+            <button class="view-toggle active" onclick="switchView('desktop')">Desktop View</button>
+            <button class="view-toggle" onclick="switchView('mobile')">Mobile View</button>
+        </div>
+        
         <div class="update-time" id="updateTime">Loading...</div>
+        
+        <div class="alert-banner" id="alertBanner">
+            [!] EFFICIENCY ALERT: One or more miners below 80% efficiency!
+        </div>
         
         <div class="stats-grid" id="statsGrid">
             <!-- Summary stats will be inserted here -->
@@ -896,6 +1051,37 @@ HTML_TEMPLATE = '''
 
     <script>
         const charts = {};
+        let minersInitialized = false;
+        let lastMinerCount = 0;
+        let currentView = 'desktop';
+        
+        function switchView(view) {
+            const body = document.body;
+            const buttons = document.querySelectorAll('.view-toggle');
+            
+            // Update body class
+            body.className = body.className.replace(/desktop-view|mobile-view/g, '');
+            body.classList.add(view + '-view');
+            
+            // Update active button
+            buttons.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent.toLowerCase().includes(view)) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            currentView = view;
+            
+            // Trigger chart resize after view change
+            setTimeout(() => {
+                Object.values(charts).forEach(chart => {
+                    if (chart && chart.resize) {
+                        chart.resize();
+                    }
+                });
+            }, 100);
+        }
         
         function formatUptime(seconds) {
             const days = Math.floor(seconds / 86400);
@@ -916,20 +1102,18 @@ HTML_TEMPLATE = '''
             return 'efficiency-low';
         }
         
-        function createMinerChart(canvasId, minerName) {
-            const ctx = document.getElementById(canvasId).getContext('2d');
+        function createMinerChart(canvasId, minerName, chartType) {
+            const ctx = document.getElementById(canvasId);
+            if (!ctx) {
+                console.log('Canvas not found:', canvasId);
+                return;
+            }
             
-            charts[minerName] = new Chart(ctx, {
+            let config = {
                 type: 'line',
                 data: {
                     labels: [],
-                    datasets: [{
-                        label: 'Hashrate (GH/s)',
-                        data: [],
-                        borderColor: 'rgb(75, 192, 192)',
-                        backgroundColor: 'rgba(75, 192, 192, 0.1)',
-                        tension: 0.1
-                    }]
+                    datasets: []
                 },
                 options: {
                     responsive: true,
@@ -945,40 +1129,303 @@ HTML_TEMPLATE = '''
                     },
                     scales: {
                         x: {
-                            display: false
+                            display: true,
+                            ticks: {
+                                font: { size: 9 },
+                                maxTicksLimit: 4
+                            }
                         },
                         y: {
                             beginAtZero: false,
                             ticks: {
-                                font: {
-                                    size: 10
-                                }
+                                font: { size: 9 }
                             }
                         }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    elements: {
+                        point: {
+                            radius: 1
+                        }
+                    },
+                    animation: {
+                        duration: 0  // Disable animations for better performance
+                    }
+                }
+            };
+            
+            // Configure chart based on type
+            switch(chartType) {
+                case 'hashrate':
+                    config.data.datasets = [{
+                        label: 'Hashrate (GH/s)',
+                        data: [],
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                        tension: 0.1,
+                        fill: true
+                    }];
+                    break;
+                case 'efficiency':
+                    config.data.datasets = [{
+                        label: 'Efficiency (%)',
+                        data: [],
+                        borderColor: 'rgb(255, 99, 132)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                        tension: 0.1,
+                        fill: true
+                    }];
+                    config.options.scales.y.beginAtZero = false;
+                    config.options.scales.y.suggestedMin = 50;
+                    config.options.scales.y.suggestedMax = 110;
+                    break;
+                case 'variance':
+                    config.data.datasets = [{
+                        label: 'Std Dev (GH/s)',
+                        data: [],
+                        borderColor: 'rgb(153, 102, 255)',
+                        backgroundColor: 'rgba(153, 102, 255, 0.1)',
+                        tension: 0.1,
+                        fill: true
+                    }];
+                    config.options.scales.y.beginAtZero = true;
+                    break;
+                case 'voltage':
+                    config.data.datasets = [{
+                        label: 'Voltage (V)',
+                        data: [],
+                        borderColor: 'rgb(255, 159, 64)',
+                        backgroundColor: 'rgba(255, 159, 64, 0.1)',
+                        tension: 0.1,
+                        fill: true
+                    }];
+                    config.options.scales.y.beginAtZero = false;
+                    break;
+            }
+            
+            const chartKey = `${minerName}_${chartType}`;
+            charts[chartKey] = new Chart(ctx.getContext('2d'), config);
+        }
+        
+        function calculateVariance(data) {
+            if (data.length < 2) return [];
+            
+            const windowSize = 5; // Calculate variance over 5-point windows
+            const variances = [];
+            
+            for (let i = windowSize - 1; i < data.length; i++) {
+                const window = data.slice(i - windowSize + 1, i + 1);
+                const mean = window.reduce((a, b) => a + b, 0) / window.length;
+                const variance = window.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / window.length;
+                variances.push(Math.sqrt(variance)); // Standard deviation
+            }
+            
+            return variances;
+        }
+        
+        function updateChart(minerName, historyData, chartType) {
+            const chartKey = `${minerName}_${chartType}`;
+            if (!charts[chartKey]) return;
+            
+            if (historyData && historyData.length > 0) {
+                const chart = charts[chartKey];
+                const labels = historyData.map(d => {
+                    const date = new Date(d.time);
+                    return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                });
+                
+                let data = [];
+                switch(chartType) {
+                    case 'hashrate':
+                        data = historyData.map(d => d.hashrate);
+                        break;
+                    case 'efficiency':
+                        data = historyData.map(d => d.efficiency);
+                        break;
+                    case 'variance':
+                        const hashrateData = historyData.map(d => d.hashrate);
+                        const varianceData = calculateVariance(hashrateData);
+                        data = new Array(hashrateData.length - varianceData.length).fill(null).concat(varianceData);
+                        break;
+                    case 'voltage':
+                        data = historyData.map(d => d.voltage);
+                        break;
+                }
+                
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = data;
+                chart.update('none');
+            }
+        }
+        
+        function updateMinerData(miner) {
+            const minerCard = document.querySelector(`[data-miner="${miner.miner_name}"]`);
+            if (!minerCard) return;
+            
+            // Update metric values only
+            const metrics = [
+                { selector: '[data-metric="hashrate"]', value: `${miner.hashrate_th} TH/s${(miner.hashrate_stddev_60s && miner.hashrate_stddev_60s > 50) ? ' <span class="variance-warning">[!]</span>' : ''}` },
+                { selector: '[data-metric="efficiency"]', value: `${miner.hashrate_efficiency_pct}%`, class: getEfficiencyClass(miner.hashrate_efficiency_pct) },
+                { selector: '[data-metric="power"]', value: `${miner.power_w} W (${miner.efficiency_jth} J/TH)` },
+                { selector: '[data-metric="temperature"]', value: `${miner.temperature_c}C / VR: ${miner.vr_temperature_c}C` },
+                { selector: '[data-metric="frequency"]', value: `${miner.frequency_mhz} MHz` },
+                { selector: '[data-metric="uptime"]', value: miner.uptime_formatted },
+                { selector: '[data-metric="shares"]', value: `[+] ${miner.accepted_shares} / [-] ${miner.rejected_shares}` },
+                { selector: '[data-metric="set_voltage"]', value: `${miner.core_voltage_set_v}V` },
+                { selector: '[data-metric="actual_voltage"]', value: `${miner.core_voltage_actual_v}V` },
+                { selector: '[data-metric="input_voltage"]', value: `${miner.input_voltage_v}V` },
+                { selector: '[data-metric="frequency_detail"]', value: `${miner.frequency_mhz} MHz` },
+            ];
+            
+            metrics.forEach(metric => {
+                const element = minerCard.querySelector(metric.selector);
+                if (element) {
+                    element.innerHTML = metric.value;
+                    if (metric.class) {
+                        element.className = `metric-value ${metric.class}`;
                     }
                 }
             });
         }
         
-        function updateChart(minerName, historyData) {
-            if (!charts[minerName] || !historyData || historyData.length === 0) return;
-            
-            const chart = charts[minerName];
-            const labels = historyData.map(d => {
-                const date = new Date(d.time);
-                return date.toLocaleTimeString();
+        function initializeMiners(miners) {
+            let minersHtml = '';
+            miners.forEach((miner, index) => {
+                if (miner.status === 'ONLINE') {
+                    minersHtml += `
+                        <div class="miner-card" data-miner="${miner.miner_name}">
+                            <div class="miner-header">
+                                <div class="miner-name">${miner.miner_name}</div>
+                                <div class="miner-status status-online">ONLINE</div>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Hashrate</span>
+                                <span class="metric-value" data-metric="hashrate"></span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Efficiency</span>
+                                <span class="metric-value" data-metric="efficiency"></span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Power</span>
+                                <span class="metric-value" data-metric="power"></span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Temperature</span>
+                                <span class="metric-value" data-metric="temperature"></span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Frequency</span>
+                                <span class="metric-value" data-metric="frequency"></span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Uptime</span>
+                                <span class="metric-value" data-metric="uptime"></span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Shares</span>
+                                <span class="metric-value" data-metric="shares"></span>
+                            </div>
+                            
+                            <div class="voltage-info">
+                                <div class="voltage-row">
+                                    <span><strong>Voltage/Frequency Settings:</strong></span>
+                                </div>
+                                <div class="voltage-row">
+                                    <span>Set Voltage:</span>
+                                    <span data-metric="set_voltage"></span>
+                                </div>
+                                <div class="voltage-row">
+                                    <span>Actual Voltage:</span>
+                                    <span data-metric="actual_voltage"></span>
+                                </div>
+                                <div class="voltage-row">
+                                    <span>Input Voltage:</span>
+                                    <span data-metric="input_voltage"></span>
+                                </div>
+                                <div class="voltage-row">
+                                    <span>Frequency:</span>
+                                    <span data-metric="frequency_detail"></span>
+                                </div>
+                            </div>
+                            
+                            <div class="chart-container">
+                                <div class="chart-title">Hashrate (GH/s)</div>
+                                <canvas id="chart-${index}-hashrate"></canvas>
+                            </div>
+                            
+                            <div class="chart-container">
+                                <div class="chart-title">Efficiency (%)</div>
+                                <canvas id="chart-${index}-efficiency"></canvas>
+                            </div>
+                            
+                            <div class="chart-container">
+                                <div class="chart-title">Variance (s GH/s)</div>
+                                <canvas id="chart-${index}-variance"></canvas>
+                            </div>
+                            
+                            <div class="chart-container">
+                                <div class="chart-title">Voltage (V)</div>
+                                <canvas id="chart-${index}-voltage"></canvas>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    minersHtml += `
+                        <div class="miner-card" data-miner="${miner.miner_name}">
+                            <div class="miner-header">
+                                <div class="miner-name">${miner.miner_name}</div>
+                                <div class="miner-status status-offline">OFFLINE</div>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">IP Address</span>
+                                <span class="metric-value">${miner.miner_ip}</span>
+                            </div>
+                        </div>
+                    `;
+                }
             });
-            const data = historyData.map(d => d.hashrate);
             
-            chart.data.labels = labels;
-            chart.data.datasets[0].data = data;
-            chart.update('none');
+            document.getElementById('minersGrid').innerHTML = minersHtml;
+            
+            // Initialize charts for online miners
+            miners.forEach((miner, index) => {
+                if (miner.status === 'ONLINE') {
+                    // Create charts for each type
+                    ['hashrate', 'efficiency', 'variance', 'voltage'].forEach(chartType => {
+                        const canvasId = `chart-${index}-${chartType}`;
+                        setTimeout(() => createMinerChart(canvasId, miner.miner_name, chartType), 100);
+                    });
+                }
+            });
+            
+            minersInitialized = true;
         }
         
         function updateData() {
             fetch('/api/metrics')
                 .then(response => response.json())
                 .then(data => {
+                    // Check for efficiency alerts
+                    const lowEfficiencyMiners = data.miners.filter(m => 
+                        m.status === 'ONLINE' && m.hashrate_efficiency_pct < 80
+                    );
+                    
+                    const alertBanner = document.getElementById('alertBanner');
+                    const body = document.body;
+                    
+                    if (lowEfficiencyMiners.length > 0) {
+                        alertBanner.classList.add('show');
+                        body.classList.add('efficiency-alert');
+                        alertBanner.innerHTML = `[!] EFFICIENCY ALERT: ${lowEfficiencyMiners.map(m => m.miner_name).join(', ')} below 80% efficiency!`;
+                    } else {
+                        alertBanner.classList.remove('show');
+                        body.classList.remove('efficiency-alert');
+                    }
+                    
                     // Update timestamp
                     document.getElementById('updateTime').textContent = 
                         'Last updated: ' + new Date(data.timestamp).toLocaleString();
@@ -1010,92 +1457,33 @@ HTML_TEMPLATE = '''
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Average Temp</div>
-                            <div class="stat-value">${data.avg_temperature.toFixed(1)}°C</div>
+                            <div class="stat-value">${data.avg_temperature.toFixed(1)}C</div>
                         </div>
                     `;
                     document.getElementById('statsGrid').innerHTML = statsHtml;
                     
-                    // Update miner cards
-                    let minersHtml = '';
-                    data.miners.forEach((miner, index) => {
-                        const canvasId = 'chart-' + index;
-                        
-                        if (miner.status === 'ONLINE') {
-                            const varianceWarning = (miner.hashrate_stddev_60s && miner.hashrate_stddev_60s > 50) ? 
-                                '<span class="variance-warning"> ⚠️</span>' : '';
-                            
-                            minersHtml += `
-                                <div class="miner-card">
-                                    <div class="miner-header">
-                                        <div class="miner-name">${miner.miner_name}</div>
-                                        <div class="miner-status status-online">ONLINE</div>
-                                    </div>
-                                    <div class="metric-row">
-                                        <span class="metric-label">Hashrate</span>
-                                        <span class="metric-value">${miner.hashrate_th} TH/s${varianceWarning}</span>
-                                    </div>
-                                    <div class="metric-row">
-                                        <span class="metric-label">Efficiency</span>
-                                        <span class="metric-value ${getEfficiencyClass(miner.hashrate_efficiency_pct)}">${miner.hashrate_efficiency_pct}%</span>
-                                    </div>
-                                    <div class="metric-row">
-                                        <span class="metric-label">Power</span>
-                                        <span class="metric-value">${miner.power_w} W (${miner.efficiency_jth} J/TH)</span>
-                                    </div>
-                                    <div class="metric-row">
-                                        <span class="metric-label">Temperature</span>
-                                        <span class="metric-value">${miner.temperature_c}°C / VR: ${miner.vr_temperature_c}°C</span>
-                                    </div>
-                                    <div class="metric-row">
-                                        <span class="metric-label">Variance (σ)</span>
-                                        <span class="metric-value">
-                                            ${miner.hashrate_stddev_60s !== null ? miner.hashrate_stddev_60s + ' GH/s' : '-'} (60s)
-                                        </span>
-                                    </div>
-                                    <div class="metric-row">
-                                        <span class="metric-label">Uptime</span>
-                                        <span class="metric-value">${miner.uptime_formatted}</span>
-                                    </div>
-                                    <div class="metric-row">
-                                        <span class="metric-label">Shares</span>
-                                        <span class="metric-value">✅ ${miner.accepted_shares} / ❌ ${miner.rejected_shares}</span>
-                                    </div>
-                                    <div class="chart-container">
-                                        <canvas id="${canvasId}"></canvas>
-                                    </div>
-                                </div>
-                            `;
-                        } else {
-                            minersHtml += `
-                                <div class="miner-card">
-                                    <div class="miner-header">
-                                        <div class="miner-name">${miner.miner_name}</div>
-                                        <div class="miner-status status-offline">OFFLINE</div>
-                                    </div>
-                                    <div class="metric-row">
-                                        <span class="metric-label">IP Address</span>
-                                        <span class="metric-value">${miner.miner_ip}</span>
-                                    </div>
-                                </div>
-                            `;
-                        }
-                    });
-                    
-                    document.getElementById('minersGrid').innerHTML = minersHtml;
-                    
-                    // Initialize or update charts
-                    data.miners.forEach((miner, index) => {
-                        if (miner.status === 'ONLINE') {
-                            const canvasId = 'chart-' + index;
-                            if (!charts[miner.miner_name]) {
-                                createMinerChart(canvasId, miner.miner_name);
+                    // Initialize miners on first run or if miner count changed
+                    if (!minersInitialized || data.miners.length !== lastMinerCount) {
+                        initializeMiners(data.miners);
+                        lastMinerCount = data.miners.length;
+                    } else {
+                        // Update existing miners
+                        data.miners.forEach(miner => {
+                            if (miner.status === 'ONLINE') {
+                                updateMinerData(miner);
                             }
-                            
-                            // Fetch and update history data
+                        });
+                    }
+                    
+                    // Update charts with history data
+                    data.miners.forEach(miner => {
+                        if (miner.status === 'ONLINE') {
                             fetch(`/api/history/${miner.miner_name}`)
                                 .then(response => response.json())
                                 .then(historyData => {
-                                    updateChart(miner.miner_name, historyData);
+                                    ['hashrate', 'efficiency', 'variance', 'voltage'].forEach(chartType => {
+                                        updateChart(miner.miner_name, historyData, chartType);
+                                    });
                                 });
                         }
                     });
@@ -1174,6 +1562,25 @@ class WebServer:
         def api_history(miner_name):
             history_data = self.collector.get_history_data(miner_name, 600)
             return jsonify(history_data)
+        
+        @self.app.route('/api/debug/<miner_name>')
+        def api_debug(miner_name):
+            """Debug endpoint to see raw history data"""
+            history_data = self.collector.get_history_data(miner_name, 600)
+            if history_data:
+                efficiency_values = [d['efficiency'] for d in history_data]
+                return jsonify({
+                    'miner': miner_name,
+                    'data_points': len(history_data),
+                    'efficiency_values': efficiency_values,
+                    'efficiency_range': {
+                        'min': min(efficiency_values) if efficiency_values else 0,
+                        'max': max(efficiency_values) if efficiency_values else 0,
+                        'avg': sum(efficiency_values) / len(efficiency_values) if efficiency_values else 0
+                    },
+                    'sample_data': history_data[:5]  # First 5 data points
+                })
+            return jsonify({'error': 'No data found'})
     
     def run(self):
         """Run the web server in a separate thread"""
@@ -1187,7 +1594,7 @@ class WebServer:
         hostname = socket.gethostname()
         local_ip = socket.gethostbyname(hostname)
         
-        print("\n🌐 Web interface available at:")
+        print("\n>> Web interface available at:")
         print("   - http://localhost:{}".format(self.port))
         print("   - http://{}:{}".format(local_ip, self.port))
         print("   - http://{}:{} (from other devices on LAN)".format(self._get_lan_ip(), self.port))
@@ -1208,13 +1615,13 @@ class WebServer:
 class MultiBitaxeMonitor:
     """Main monitor class that orchestrates the monitoring process"""
     
-    def __init__(self, miners_config, poll_interval=30, expected_hashrates=None, web_port=8080):
+    def __init__(self, miners_config, poll_interval=60, expected_hashrates=None, web_port=8080):
         """
         Initialize monitor
         
         Args:
             miners_config: List of miner configurations
-            poll_interval: Seconds between polls (default 30)
+            poll_interval: Seconds between polls (default 60)
             expected_hashrates: Optional dict of miner_name -> expected_gh overrides
             web_port: Port for web interface (default 8080)
         """
@@ -1228,13 +1635,23 @@ class MultiBitaxeMonitor:
     
     def run_monitor(self, show_detailed=False):
         """Main monitoring loop"""
-        print("🚀 Starting Multi-Bitaxe Monitor with Variance Tracking and Web Interface")
-        print("📊 Monitoring {} miners:".format(len(self.miners)))
+        print(">> Starting Enhanced Multi-Bitaxe Monitor with Persistent Charts")
+        print(">> Monitoring {} miners:".format(len(self.miners)))
         for miner in self.miners:
             print("   - {} ({}:{})".format(miner.name, miner.ip, miner.port))
-        print("📁 Data will be saved to: {}".format(self.logger.filename))
-        print("🔄 Polling every {} seconds...".format(self.poll_interval))
-        print("📈 Tracking hashrate variance over 60s, 300s, and 600s windows")
+        
+        # Check if data file exists and show appropriate message
+        if os.path.exists(self.logger.filename):
+            print(">> Data will be appended to: {} (existing file)".format(self.logger.filename))
+        else:
+            print(">> Data will be saved to: {} (new file)".format(self.logger.filename))
+        
+        print(">> Polling every {} seconds... (Changed from 30s to 60s)".format(self.poll_interval))
+        print(">> Features: Hashrate, Efficiency, Variance & Voltage charts")
+        print(">> Variance tracking: 60s, 300s, 600s windows")
+        print(">> Background alerts for efficiency < 80%")
+        print(">> Charts are now persistent and won't disappear!")
+        print(">> Using persistent data file - no new files created on restart!")
         
         # Start web server
         self.web_server.run()
@@ -1268,41 +1685,104 @@ class MultiBitaxeMonitor:
                         elapsed, self.poll_interval))
                 
         except KeyboardInterrupt:
-            print("\n\n🛑 Monitoring stopped by user")
-            print("📁 Data saved to: {}".format(self.logger.filename))
+            print("\n\n>> Monitoring stopped by user")
+            print(">> All data is in persistent file: {}".format(self.logger.filename))
         except Exception as e:
             logger.error("Monitoring error: {}".format(e))
-            print("📁 Data saved to: {}".format(self.logger.filename))
+            print(">> All data is in persistent file: {}".format(self.logger.filename))
+
+def load_config_from_env():
+    """Load configuration from environment variables for Docker deployment"""
+    import os
+    
+    # Get miner configuration from environment
+    miner_names = os.getenv('MINER_NAMES', 'Gamma-1,Gamma-2,Gamma-3').split(',')
+    miner_ips = os.getenv('MINER_IPS', '192.168.1.45,192.168.1.46,192.168.1.47').split(',')
+    miner_ports = os.getenv('MINER_PORTS', '80,80,80').split(',')
+    
+    # Build miners config
+    miners_config = []
+    for i, name in enumerate(miner_names):
+        config = {
+            'name': name.strip(),
+            'ip': miner_ips[i].strip() if i < len(miner_ips) else '192.168.1.45'
+        }
+        if i < len(miner_ports) and miner_ports[i].strip() != '80':
+            config['port'] = int(miner_ports[i].strip())
+        miners_config.append(config)
+    
+    # Get expected hashrates if provided
+    expected_hashrates = {}
+    expected_rates_str = os.getenv('EXPECTED_HASHRATES', '')
+    if expected_rates_str:
+        try:
+            # Format: "Gamma-1:1200,Gamma-2:1150,Gamma-3:1100"
+            for pair in expected_rates_str.split(','):
+                if ':' in pair:
+                    name, rate = pair.split(':', 1)
+                    expected_hashrates[name.strip()] = float(rate.strip())
+        except Exception as e:
+            print(">> Warning: Could not parse EXPECTED_HASHRATES: {}".format(e))
+    
+    # Get other settings
+    poll_interval = int(os.getenv('POLL_INTERVAL', '60'))
+    web_port = int(os.getenv('WEB_PORT', '8080'))
+    show_detailed = os.getenv('SHOW_DETAILED', 'false').lower() == 'true'
+    
+    return {
+        'miners_config': miners_config,
+        'expected_hashrates': expected_hashrates,
+        'poll_interval': poll_interval,
+        'web_port': web_port,
+        'show_detailed': show_detailed
+    }
 
 def main():
     """Main entry point"""
-    # Configuration - UPDATE THESE VALUES FOR YOUR MINERS
-    miners_config = [
-        {'name': 'Gamma-1', 'ip': '192.168.1.45'},
-        {'name': 'Gamma-2', 'ip': '192.168.1.46'},
-        {'name': 'Gamma-3', 'ip': '192.168.1.47'}
-        # Add more miners as needed:
-        # {'name': 'Gamma-4', 'ip': '192.168.1.48', 'port': 8080},  # Custom port example
-    ]
+    import os
     
-    # Optional: Manual expected hashrate overrides (in GH/s)
-    # Leave empty {} to use automatic calculation based on ASIC model + frequency
-    expected_hashrates = {
-        # 'Gamma-1': 1200,  # Force expected hashrate to 1200 GH/s
-        # 'Gamma-2': 1150,  # Force expected hashrate to 1150 GH/s
-        # 'Gamma-3': 1100,  # Force expected hashrate to 1100 GH/s
-    }
+    # Check if running in Docker (environment variables present)
+    if os.getenv('MINER_NAMES') or os.getenv('MINER_IPS'):
+        print(">> Loading configuration from environment variables (Docker mode)")
+        config = load_config_from_env()
+        miners_config = config['miners_config']
+        expected_hashrates = config['expected_hashrates']
+        poll_interval = config['poll_interval']
+        web_port = config['web_port']
+        show_detailed = config['show_detailed']
+    else:
+        print(">> Using hardcoded configuration (Local mode)")
+        # Configuration - UPDATE THESE VALUES FOR YOUR MINERS
+        miners_config = [
+            {'name': 'Gamma-1', 'ip': '192.168.1.45'},
+            {'name': 'Gamma-2', 'ip': '192.168.1.46'},
+            {'name': 'Gamma-3', 'ip': '192.168.1.47'}
+            # Add more miners as needed:
+            # {'name': 'Gamma-4', 'ip': '192.168.1.48', 'port': 8080},  # Custom port example
+        ]
+        
+        # Optional: Manual expected hashrate overrides (in GH/s)
+        # Leave empty {} to use automatic calculation based on ASIC model + frequency
+        expected_hashrates = {
+            # 'Gamma-1': 1200,  # Force expected hashrate to 1200 GH/s
+            # 'Gamma-2': 1150,  # Force expected hashrate to 1150 GH/s
+            # 'Gamma-3': 1100,  # Force expected hashrate to 1100 GH/s
+        }
+        
+        poll_interval = 60  # Changed from 30 to 60 seconds between polls
+        web_port = 8080  # Web interface port
+        show_detailed = False
     
     # Create and run monitor
     monitor = MultiBitaxeMonitor(
         miners_config=miners_config,
-        poll_interval=30,  # 30 seconds between polls
+        poll_interval=poll_interval,
         expected_hashrates=expected_hashrates,
-        web_port=8080  # Web interface port
+        web_port=web_port
     )
     
-    # Set show_detailed=True to see individual miner details
-    monitor.run_monitor(show_detailed=False)
+    # Set show_detailed based on configuration
+    monitor.run_monitor(show_detailed=show_detailed)
 
 if __name__ == "__main__":
     main()
