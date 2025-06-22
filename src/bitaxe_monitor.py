@@ -31,8 +31,9 @@ import logging
 from collections import deque, defaultdict
 import statistics
 import threading
-from flask import Flask, render_template_string, jsonify
+from flask import Flask, render_template_string, jsonify, request
 import socket
+from variance_persistence import VarianceTracker
 
 # Configure logging
 logging.basicConfig(
@@ -101,20 +102,20 @@ class HashrateHistory:
     """Manages historical hashrate data for variance calculations"""
     
     def __init__(self):
-        # Store tuples of (timestamp, hashrate_gh, efficiency_pct, voltage_v) for each miner
+        # Store tuples of (timestamp, hashrate_gh, efficiency_pct, voltage_v, expected_hashrate_gh) for each miner
         self.history = defaultdict(deque)
         self.max_history_seconds = 600  # Keep 10 minutes of history
     
-    def add_sample(self, miner_name, timestamp, hashrate_gh, efficiency_pct=0, voltage_v=0):
-        """Add a sample for a miner"""
+    def add_sample(self, miner_name, timestamp, hashrate_gh, efficiency_pct=0, voltage_v=0, expected_hashrate_gh=0):
+        """Add a sample for a miner with expected hashrate for variance baseline"""
         history = self.history[miner_name]
         
         # Convert timestamp string to datetime if needed
         if isinstance(timestamp, str):
             timestamp = datetime.fromisoformat(timestamp)
         
-        # Add new sample with additional metrics
-        history.append((timestamp, hashrate_gh, efficiency_pct, voltage_v))
+        # Add new sample with additional metrics including expected hashrate
+        history.append((timestamp, hashrate_gh, efficiency_pct, voltage_v, expected_hashrate_gh))
         
         # Remove old samples beyond max history
         cutoff_time = timestamp - timedelta(seconds=self.max_history_seconds)
@@ -133,7 +134,7 @@ class HashrateHistory:
         
         # Collect samples within window
         samples = []
-        for timestamp, hashrate, _, _ in history:
+        for timestamp, hashrate, _, _, _ in history:
             if timestamp >= cutoff_time:
                 samples.append(hashrate)
         
@@ -155,6 +156,64 @@ class HashrateHistory:
             return None
         return variance ** 0.5
     
+    def calculate_directional_variance(self, miner_name, window_seconds):
+        """Calculate positive and negative variance relative to expected hashrate"""
+        history = self.history.get(miner_name, deque())
+        if not history:
+            return {"positive_variance": None, "negative_variance": None, "avg_deviation": None}
+        
+        # Get current time and calculate cutoff
+        current_time = history[-1][0]
+        cutoff_time = current_time - timedelta(seconds=window_seconds)
+        
+        # Collect samples within the window with their expected values
+        deviations = []
+        positive_deviations = []
+        negative_deviations = []
+        
+        for timestamp, hashrate, _, _, expected_hashrate in history:
+            if timestamp >= cutoff_time and expected_hashrate > 0:
+                deviation = hashrate - expected_hashrate
+                deviations.append(deviation)
+                
+                if deviation >= 0:
+                    positive_deviations.append(deviation)
+                else:
+                    negative_deviations.append(abs(deviation))
+        
+        # Need at least 2 samples for meaningful calculations
+        if len(deviations) < 2:
+            return {"positive_variance": None, "negative_variance": None, "avg_deviation": None}
+        
+        try:
+            # Calculate average deviation
+            avg_deviation = sum(deviations) / len(deviations)
+            
+            # Calculate positive variance (standard deviation of positive deviations)
+            positive_variance = None
+            if len(positive_deviations) > 1:
+                pos_mean = sum(positive_deviations) / len(positive_deviations)
+                pos_var = sum((x - pos_mean) ** 2 for x in positive_deviations) / (len(positive_deviations) - 1)
+                positive_variance = pos_var ** 0.5
+            
+            # Calculate negative variance (standard deviation of negative deviations)
+            negative_variance = None
+            if len(negative_deviations) > 1:
+                neg_mean = sum(negative_deviations) / len(negative_deviations)
+                neg_var = sum((x - neg_mean) ** 2 for x in negative_deviations) / (len(negative_deviations) - 1)
+                negative_variance = neg_var ** 0.5
+            
+            return {
+                "positive_variance": positive_variance,
+                "negative_variance": negative_variance, 
+                "avg_deviation": avg_deviation,
+                "positive_count": len(positive_deviations),
+                "negative_count": len(negative_deviations),
+                "total_samples": len(deviations)
+            }
+        except:
+            return {"positive_variance": None, "negative_variance": None, "avg_deviation": None}
+    
     def get_sample_count(self, miner_name, window_seconds):
         """Get number of samples in specified window"""
         history = self.history.get(miner_name, deque())
@@ -164,7 +223,7 @@ class HashrateHistory:
         current_time = history[-1][0]
         cutoff_time = current_time - timedelta(seconds=window_seconds)
         
-        count = sum(1 for timestamp, _, _, _ in history if timestamp >= cutoff_time)
+        count = sum(1 for timestamp, _, _, _, _ in history if timestamp >= cutoff_time)
         return count
     
     def get_history_data(self, miner_name, window_seconds=600):
@@ -177,13 +236,15 @@ class HashrateHistory:
         cutoff_time = current_time - timedelta(seconds=window_seconds)
         
         data = []
-        for timestamp, hashrate, efficiency, voltage in history:
+        for timestamp, hashrate, efficiency, voltage, expected_hashrate in history:
             if timestamp >= cutoff_time:
                 data.append({
                     'time': timestamp.isoformat(),
                     'hashrate': hashrate,
                     'efficiency': efficiency,
-                    'voltage': voltage
+                    'voltage': voltage,
+                    'expected_hashrate': expected_hashrate,
+                    'deviation': hashrate - expected_hashrate if expected_hashrate > 0 else 0
                 })
         
         return data
@@ -213,6 +274,17 @@ class MinerMetrics:
         self.hashrate_stddev_60s = kwargs.get('hashrate_stddev_60s', None)
         self.hashrate_stddev_300s = kwargs.get('hashrate_stddev_300s', None)
         self.hashrate_stddev_600s = kwargs.get('hashrate_stddev_600s', None)
+        
+        # Directional variance metrics (new - positive/negative deviation tracking)
+        self.hashrate_positive_variance_60s = kwargs.get('hashrate_positive_variance_60s', None)
+        self.hashrate_positive_variance_300s = kwargs.get('hashrate_positive_variance_300s', None)
+        self.hashrate_positive_variance_600s = kwargs.get('hashrate_positive_variance_600s', None)
+        self.hashrate_negative_variance_60s = kwargs.get('hashrate_negative_variance_60s', None)
+        self.hashrate_negative_variance_300s = kwargs.get('hashrate_negative_variance_300s', None)
+        self.hashrate_negative_variance_600s = kwargs.get('hashrate_negative_variance_600s', None)
+        self.hashrate_avg_deviation_60s = kwargs.get('hashrate_avg_deviation_60s', None)
+        self.hashrate_avg_deviation_300s = kwargs.get('hashrate_avg_deviation_300s', None)
+        self.hashrate_avg_deviation_600s = kwargs.get('hashrate_avg_deviation_600s', None)
         
         # Temperature and cooling
         self.temperature_c = kwargs.get('temperature_c', 0.0)
@@ -262,6 +334,15 @@ class MinerMetrics:
             'hashrate_stddev_60s': self.hashrate_stddev_60s if self.hashrate_stddev_60s is not None else '',
             'hashrate_stddev_300s': self.hashrate_stddev_300s if self.hashrate_stddev_300s is not None else '',
             'hashrate_stddev_600s': self.hashrate_stddev_600s if self.hashrate_stddev_600s is not None else '',
+            'hashrate_positive_variance_60s': self.hashrate_positive_variance_60s if self.hashrate_positive_variance_60s is not None else '',
+            'hashrate_positive_variance_300s': self.hashrate_positive_variance_300s if self.hashrate_positive_variance_300s is not None else '',
+            'hashrate_positive_variance_600s': self.hashrate_positive_variance_600s if self.hashrate_positive_variance_600s is not None else '',
+            'hashrate_negative_variance_60s': self.hashrate_negative_variance_60s if self.hashrate_negative_variance_60s is not None else '',
+            'hashrate_negative_variance_300s': self.hashrate_negative_variance_300s if self.hashrate_negative_variance_300s is not None else '',
+            'hashrate_negative_variance_600s': self.hashrate_negative_variance_600s if self.hashrate_negative_variance_600s is not None else '',
+            'hashrate_avg_deviation_60s': self.hashrate_avg_deviation_60s if self.hashrate_avg_deviation_60s is not None else '',
+            'hashrate_avg_deviation_300s': self.hashrate_avg_deviation_300s if self.hashrate_avg_deviation_300s is not None else '',
+            'hashrate_avg_deviation_600s': self.hashrate_avg_deviation_600s if self.hashrate_avg_deviation_600s is not None else '',
             'power_w': self.power_w,
             'efficiency_jth': self.efficiency_jth,
             'temperature_c': self.temperature_c,
@@ -350,6 +431,9 @@ class MinerMetrics:
             'hashrate_efficiency_pct',
             'hashrate_variance_60s', 'hashrate_variance_300s', 'hashrate_variance_600s',
             'hashrate_stddev_60s', 'hashrate_stddev_300s', 'hashrate_stddev_600s',
+            'hashrate_positive_variance_60s', 'hashrate_positive_variance_300s', 'hashrate_positive_variance_600s',
+            'hashrate_negative_variance_60s', 'hashrate_negative_variance_300s', 'hashrate_negative_variance_600s',
+            'hashrate_avg_deviation_60s', 'hashrate_avg_deviation_300s', 'hashrate_avg_deviation_600s',
             'power_w', 'efficiency_jth',
             'temperature_c', 'vr_temperature_c', 'fan_speed_rpm',
             'core_voltage_actual_v', 'core_voltage_set_v', 'input_voltage_v',
@@ -378,18 +462,22 @@ class BitaxeAPI:
 class MetricsCollector:
     """Collects and processes miner metrics"""
     
-    def __init__(self, expected_hashrates=None):
+    def __init__(self, expected_hashrates=None, data_dir="data"):
         """
         Initialize collector
         
         Args:
             expected_hashrates: Optional dict of miner_name -> expected_gh overrides
+            data_dir: Directory for enhanced variance data storage
         """
         self.api = BitaxeAPI()
         self.expected_hashrates = expected_hashrates or {}
         self.hashrate_history = HashrateHistory()
         self.latest_metrics = []  # Store latest metrics for web display
         self.metrics_lock = threading.Lock()
+        
+        # Enhanced variance tracking
+        self.variance_tracker = VarianceTracker(data_dir)
     
     def collect_miner_metrics(self, miner_config):
         """Collect comprehensive metrics from a single miner"""
@@ -411,7 +499,8 @@ class MetricsCollector:
                 timestamp, 
                 metrics.hashrate_gh,
                 metrics.hashrate_efficiency_pct,
-                metrics.core_voltage_actual_v
+                metrics.core_voltage_actual_v,
+                metrics.expected_hashrate_gh  # Add expected hashrate for baseline variance
             )
             
             # Calculate variance for different windows
@@ -423,6 +512,30 @@ class MetricsCollector:
             metrics.hashrate_stddev_60s = self.hashrate_history.calculate_std_dev(miner_config.name, 60)
             metrics.hashrate_stddev_300s = self.hashrate_history.calculate_std_dev(miner_config.name, 300)
             metrics.hashrate_stddev_600s = self.hashrate_history.calculate_std_dev(miner_config.name, 600)
+            
+            # Calculate directional variance (positive/negative relative to expected hashrate)
+            variance_data = {}
+            for window_seconds, suffix in [(60, '60s'), (300, '300s'), (600, '600s')]:
+                directional_var = self.hashrate_history.calculate_directional_variance(miner_config.name, window_seconds)
+                setattr(metrics, f'hashrate_positive_variance_{suffix}', directional_var.get('positive_variance'))
+                setattr(metrics, f'hashrate_negative_variance_{suffix}', directional_var.get('negative_variance'))
+                setattr(metrics, f'hashrate_avg_deviation_{suffix}', directional_var.get('avg_deviation'))
+                
+                # Store variance data for enhanced logging
+                variance_data[suffix] = directional_var
+            
+            # Enhanced variance tracking and persistence
+            try:
+                self.variance_tracker.log_miner_variance(
+                    timestamp, miner_config.name,
+                    variance_data.get('60s', {}),
+                    variance_data.get('300s', {}), 
+                    variance_data.get('600s', {}),
+                    metrics.expected_hashrate_gh,
+                    metrics.hashrate_gh
+                )
+            except Exception as e:
+                logger.warning(f"Failed to log enhanced variance data for {miner_config.name}: {e}")
         
         return metrics
     
@@ -1018,6 +1131,130 @@ HTML_TEMPLATE = '''
                 padding: 10px;
             }
         }
+        
+        /* Enhanced Variance Analytics Styles */
+        .variance-controls {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        
+        .variance-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .variance-btn.active {
+            background: #007bff;
+        }
+        
+        .variance-btn:hover {
+            opacity: 0.9;
+        }
+        
+        .variance-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .variance-card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid #007bff;
+        }
+        
+        .variance-card.warning {
+            border-left-color: #ffc107;
+        }
+        
+        .variance-card.danger {
+            border-left-color: #dc3545;
+        }
+        
+        .variance-card.success {
+            border-left-color: #28a745;
+        }
+        
+        .variance-metric {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            padding: 4px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .variance-metric:last-child {
+            border-bottom: none;
+        }
+        
+        .variance-label {
+            font-weight: 500;
+            color: #666;
+        }
+        
+        .variance-value {
+            font-weight: bold;
+        }
+        
+        .variance-value.good {
+            color: #28a745;
+        }
+        
+        .variance-value.warning {
+            color: #ffc107;
+        }
+        
+        .variance-value.danger {
+            color: #dc3545;
+        }
+        
+        .report-controls {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .report-controls select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .report-display {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 300px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        @media (max-width: 768px) {
+            .variance-summary-grid {
+                grid-template-columns: 1fr;
+            }
+            .report-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -1042,6 +1279,48 @@ HTML_TEMPLATE = '''
         
         <div class="miners-grid" id="minersGrid">
             <!-- Miner cards will be inserted here -->
+        </div>
+        
+        <!-- Enhanced Variance Analytics Dashboard -->
+        <div id="varianceAnalytics" style="display: none; margin-top: 30px;">
+            <h2>Enhanced Variance Analytics</h2>
+            
+            <div class="variance-controls">
+                <button onclick="toggleVarianceView('analytics')" class="variance-btn active" id="analyticsBtn">Analytics</button>
+                <button onclick="toggleVarianceView('reports')" class="variance-btn" id="reportsBtn">Reports</button>
+            </div>
+            
+            <!-- Analytics View -->
+            <div id="analyticsView" class="variance-view">
+                <div class="variance-summary-grid" id="varianceSummaryGrid">
+                    <!-- Summary cards will be inserted here -->
+                </div>
+            </div>
+            
+            <!-- Reports View -->
+            <div id="reportsView" class="variance-view" style="display: none;">
+                <div class="report-controls">
+                    <select id="reportMinerSelect">
+                        <option value="">Select Miner</option>
+                    </select>
+                    <select id="reportDaysSelect">
+                        <option value="7">7 Days</option>
+                        <option value="14">14 Days</option>
+                        <option value="30" selected>30 Days</option>
+                    </select>
+                    <button onclick="generateVarianceReport()" class="variance-btn">Generate Report</button>
+                </div>
+                <div id="reportDisplay" class="report-display">
+                    <p>Select a miner and click "Generate Report" to view detailed variance analysis.</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Toggle button for variance analytics -->
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="toggleVarianceAnalytics()" class="view-toggle" id="varianceToggle">
+                Show Enhanced Variance Analytics
+            </button>
         </div>
         
         <div class="footer">
@@ -1192,6 +1471,43 @@ HTML_TEMPLATE = '''
                         fill: true
                     }];
                     config.options.scales.y.beginAtZero = true;
+                    config.options.scales.y.title = { display: true, text: 'Standard Deviation (GH/s)' };
+                    break;
+                case 'directional_variance':
+                    config.data.datasets = [
+                        {
+                            label: 'Expected Hashrate',
+                            data: [],
+                            borderColor: 'rgb(128, 128, 128)',
+                            backgroundColor: 'rgba(128, 128, 128, 0.1)',
+                            borderDash: [5, 5],
+                            fill: false,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Actual Hashrate',
+                            data: [],
+                            borderColor: 'rgb(54, 162, 235)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            fill: false
+                        },
+                        {
+                            label: 'Positive Deviation Zone',
+                            data: [],
+                            borderColor: 'rgb(75, 192, 192)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            fill: '+1'  // Fill above expected hashrate
+                        },
+                        {
+                            label: 'Negative Deviation Zone',
+                            data: [],
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            fill: '+1'  // Fill below expected hashrate
+                        }
+                    ];
+                    config.options.scales.y.beginAtZero = false;
+                    config.options.scales.y.title = { display: true, text: 'Hashrate (GH/s)' };
                     break;
                 case 'voltage':
                     config.data.datasets = [{
@@ -1250,6 +1566,21 @@ HTML_TEMPLATE = '''
                         const varianceData = calculateVariance(hashrateData);
                         data = new Array(hashrateData.length - varianceData.length).fill(null).concat(varianceData);
                         break;
+                    case 'directional_variance':
+                        // Create datasets for directional variance visualization
+                        const times = historyData.map(d => d.time);
+                        const expectedData = historyData.map(d => d.expected_hashrate);
+                        const actualData = historyData.map(d => d.hashrate);
+                        
+                        // Update all four datasets for the directional variance chart
+                        charts[chartKey].data.datasets[0].data = expectedData;  // Expected baseline
+                        charts[chartKey].data.datasets[1].data = actualData;    // Actual hashrate
+                        charts[chartKey].data.datasets[2].data = actualData.map((val, i) => val > expectedData[i] ? val : null);  // Positive deviation
+                        charts[chartKey].data.datasets[3].data = actualData.map((val, i) => val < expectedData[i] ? val : null);  // Negative deviation
+                        
+                        charts[chartKey].data.labels = times;
+                        charts[chartKey].update('none');
+                        return; // Skip normal data update since we handled it above
                     case 'voltage':
                         data = historyData.map(d => d.voltage);
                         break;
@@ -1363,8 +1694,13 @@ HTML_TEMPLATE = '''
                             </div>
                             
                             <div class="chart-container">
-                                <div class="chart-title">Variance (s GH/s)</div>
+                                <div class="chart-title">Variance (σ GH/s)</div>
                                 <canvas id="chart-${index}-variance"></canvas>
+                            </div>
+                            
+                            <div class="chart-container">
+                                <div class="chart-title">Directional Variance (vs Expected)</div>
+                                <canvas id="chart-${index}-directional_variance"></canvas>
                             </div>
                             
                             <div class="chart-container">
@@ -1395,7 +1731,7 @@ HTML_TEMPLATE = '''
             miners.forEach((miner, index) => {
                 if (miner.status === 'ONLINE') {
                     // Create charts for each type
-                    ['hashrate', 'efficiency', 'variance', 'voltage'].forEach(chartType => {
+                    ['hashrate', 'efficiency', 'variance', 'directional_variance', 'voltage'].forEach(chartType => {
                         const canvasId = `chart-${index}-${chartType}`;
                         setTimeout(() => createMinerChart(canvasId, miner.miner_name, chartType), 100);
                     });
@@ -1481,7 +1817,7 @@ HTML_TEMPLATE = '''
                             fetch(`/api/history/${miner.miner_name}`)
                                 .then(response => response.json())
                                 .then(historyData => {
-                                    ['hashrate', 'efficiency', 'variance', 'voltage'].forEach(chartType => {
+                                    ['hashrate', 'efficiency', 'variance', 'directional_variance', 'voltage'].forEach(chartType => {
                                         updateChart(miner.miner_name, historyData, chartType);
                                     });
                                 });
@@ -1495,6 +1831,177 @@ HTML_TEMPLATE = '''
         
         // Initial update
         updateData();
+        
+        // Enhanced Variance Analytics Functions
+        let varianceAnalyticsVisible = false;
+        let currentVarianceView = 'analytics';
+        
+        function toggleVarianceAnalytics() {
+            const analyticsDiv = document.getElementById('varianceAnalytics');
+            const toggleBtn = document.getElementById('varianceToggle');
+            
+            varianceAnalyticsVisible = !varianceAnalyticsVisible;
+            
+            if (varianceAnalyticsVisible) {
+                analyticsDiv.style.display = 'block';
+                toggleBtn.textContent = 'Hide Enhanced Variance Analytics';
+                loadVarianceData();
+            } else {
+                analyticsDiv.style.display = 'none';
+                toggleBtn.textContent = 'Show Enhanced Variance Analytics';
+            }
+        }
+        
+        function toggleVarianceView(view) {
+            // Hide all views
+            document.querySelectorAll('.variance-view').forEach(v => v.style.display = 'none');
+            document.querySelectorAll('.variance-btn').forEach(b => b.classList.remove('active'));
+            
+            // Show selected view
+            document.getElementById(view + 'View').style.display = 'block';
+            document.getElementById(view + 'Btn').classList.add('active');
+            
+            currentVarianceView = view;
+            
+            if (view === 'analytics') {
+                loadVarianceData();
+            } else if (view === 'reports') {
+                populateReportMinerSelect();
+            }
+        }
+        
+        function loadVarianceData() {
+            fetch('/api/variance/summary')
+                .then(response => response.json())
+                .then(data => {
+                    displayVarianceSummary(data.miner_summaries);
+                })
+                .catch(error => {
+                    console.error('Error loading variance data:', error);
+                });
+        }
+        
+        function displayVarianceSummary(summaries) {
+            const grid = document.getElementById('varianceSummaryGrid');
+            let html = '';
+            
+            for (const [minerName, data] of Object.entries(summaries)) {
+                let cardClass = 'variance-card';
+                if (data.stability_score >= 80) cardClass += ' success';
+                else if (data.stability_score >= 60) cardClass += ' warning';
+                else cardClass += ' danger';
+                
+                html += `
+                    <div class="${cardClass}">
+                        <h4>${minerName}</h4>
+                        <div class="variance-metric">
+                            <span class="variance-label">Stability Score:</span>
+                            <span class="variance-value ${getStabilityClass(data.stability_score)}">${data.stability_score}/100</span>
+                        </div>
+                        <div class="variance-metric">
+                            <span class="variance-label">Efficiency:</span>
+                            <span class="variance-value ${getEfficiencyClass(data.efficiency_pct)}">${data.efficiency_pct}%</span>
+                        </div>
+                        <div class="variance-metric">
+                            <span class="variance-label">Current Deviation:</span>
+                            <span class="variance-value">${data.current_deviation > 0 ? '+' : ''}${data.current_deviation} GH/s</span>
+                        </div>
+                        <div class="variance-metric">
+                            <span class="variance-label">Variance (60s):</span>
+                            <span class="variance-value">${data.variance_60s} GH/s</span>
+                        </div>
+                        <div class="variance-metric">
+                            <span class="variance-label">Variance (300s):</span>
+                            <span class="variance-value">${data.variance_300s} GH/s</span>
+                        </div>
+                        <div class="variance-metric">
+                            <span class="variance-label">Variance (600s):</span>
+                            <span class="variance-value">${data.variance_600s} GH/s</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            grid.innerHTML = html;
+        }
+        
+        function getStabilityClass(score) {
+            if (score >= 80) return 'good';
+            if (score >= 60) return 'warning';
+            return 'danger';
+        }
+        
+        function populateReportMinerSelect() {
+            const select = document.getElementById('reportMinerSelect');
+            
+            // Get current miners from the main data
+            fetch('/api/metrics')
+                .then(response => response.json())
+                .then(data => {
+                    select.innerHTML = '<option value="">Select Miner</option>';
+                    data.miners.forEach(miner => {
+                        if (miner.status === 'ONLINE') {
+                            select.innerHTML += `<option value="${miner.miner_name}">${miner.miner_name}</option>`;
+                        }
+                    });
+                });
+        }
+        
+        function generateVarianceReport() {
+            const minerSelect = document.getElementById('reportMinerSelect');
+            const daysSelect = document.getElementById('reportDaysSelect');
+            const reportDisplay = document.getElementById('reportDisplay');
+            
+            const minerName = minerSelect.value;
+            const days = daysSelect.value;
+            
+            if (!minerName) {
+                alert('Please select a miner');
+                return;
+            }
+            
+            reportDisplay.innerHTML = 'Generating report...';
+            
+            fetch(`/api/variance/analytics/${minerName}?days=${days}`)
+                .then(response => response.json())
+                .then(data => {
+                    displayVarianceReport(data);
+                })
+                .catch(error => {
+                    reportDisplay.innerHTML = 'Error generating report: ' + error;
+                });
+        }
+        
+        function displayVarianceReport(data) {
+            const reportDisplay = document.getElementById('reportDisplay');
+            
+            let report = `Variance Analysis Report for ${data.miner_name}\n`;
+            report += `Analysis Period: ${data.analysis_period_days} days\n`;
+            report += `Generated: ${new Date().toLocaleString()}\n`;
+            report += '='.repeat(60) + '\n\n';
+            
+            report += 'Variance Trends by Time Window:\n';
+            if (data.variance_trends) {
+                data.variance_trends.forEach(trend => {
+                    report += `  ${trend.window_seconds}s window:\n`;
+                    report += `    Average Positive Variance: ${trend.avg_pos_var ? trend.avg_pos_var.toFixed(2) + ' GH/s' : 'N/A'}\n`;
+                    report += `    Average Negative Variance: ${trend.avg_neg_var ? trend.avg_neg_var.toFixed(2) + ' GH/s' : 'N/A'}\n`;
+                    report += `    Average Stability Score: ${trend.avg_stability ? trend.avg_stability.toFixed(1) + '/100' : 'N/A'}\n`;
+                    report += `    Sample Count: ${trend.sample_count}\n\n`;
+                });
+            }
+            
+            if (data.worst_stability_periods && data.worst_stability_periods.length > 0) {
+                report += 'Worst Stability Periods:\n';
+                report += '  Timestamp           | Window | Score | Deviation\n';
+                data.worst_stability_periods.slice(0, 5).forEach(period => {
+                    const timestamp = new Date(period.timestamp).toLocaleString();
+                    report += `  ${timestamp} | ${period.window_seconds.toString().padStart(3)}s   | ${period.stability_score.toFixed(1).padStart(5)} | ${period.deviation_gh >= 0 ? '+' : ''}${period.deviation_gh.toFixed(1)} GH/s\n`;
+                });
+            }
+            
+            reportDisplay.innerHTML = report;
+        }
         
         // Update every 5 seconds
         setInterval(updateData, 5000);
@@ -1581,6 +2088,72 @@ class WebServer:
                     'sample_data': history_data[:5]  # First 5 data points
                 })
             return jsonify({'error': 'No data found'})
+        
+        @self.app.route('/api/variance/analytics/<miner_name>')
+        def api_variance_analytics(miner_name):
+            """Get enhanced variance analytics for a miner"""
+            days = int(request.args.get('days', 7))
+            try:
+                analytics = self.collector.variance_tracker.get_miner_analytics(miner_name, days)
+                return jsonify(analytics)
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/variance/report/<miner_name>')
+        def api_variance_report(miner_name):
+            """Generate and return a variance report for a miner"""
+            days = int(request.args.get('days', 30))
+            try:
+                report_path = self.collector.variance_tracker.export_miner_report(miner_name, days)
+                # Return the report path for download
+                return jsonify({
+                    'report_generated': True,
+                    'report_path': report_path,
+                    'miner_name': miner_name,
+                    'analysis_days': days
+                })
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/variance/summary')
+        def api_variance_summary():
+            """Get variance summary for all miners"""
+            try:
+                metrics = self.collector.get_latest_metrics()
+                summary = {}
+                
+                for miner in metrics:
+                    if miner.status == 'ONLINE':
+                        # Calculate combined stability score across all windows
+                        stability_scores = []
+                        for window in ['60s', '300s', '600s']:
+                            pos_var = getattr(miner, f'hashrate_positive_variance_{window}', None)
+                            neg_var = getattr(miner, f'hashrate_negative_variance_{window}', None)
+                            avg_dev = getattr(miner, f'hashrate_avg_deviation_{window}', 0)
+                            
+                            if pos_var is not None and neg_var is not None and miner.expected_hashrate_gh > 0:
+                                # Simple stability calculation
+                                deviation_pct = abs(avg_dev) / miner.expected_hashrate_gh * 100
+                                score = max(0, 100 - deviation_pct * 2)
+                                stability_scores.append(score)
+                        
+                        avg_stability = sum(stability_scores) / len(stability_scores) if stability_scores else 0
+                        
+                        summary[miner.miner_name] = {
+                            'stability_score': round(avg_stability, 1),
+                            'efficiency_pct': round(miner.hashrate_efficiency_pct, 1),
+                            'current_deviation': round(miner.hashrate_gh - miner.expected_hashrate_gh, 1),
+                            'variance_60s': round(getattr(miner, 'hashrate_stddev_60s', 0) or 0, 1),
+                            'variance_300s': round(getattr(miner, 'hashrate_stddev_300s', 0) or 0, 1),
+                            'variance_600s': round(getattr(miner, 'hashrate_stddev_600s', 0) or 0, 1)
+                        }
+                
+                return jsonify({
+                    'timestamp': datetime.now().isoformat(),
+                    'miner_summaries': summary
+                })
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
     
     def run(self):
         """Run the web server in a separate thread"""
@@ -1628,7 +2201,7 @@ class MultiBitaxeMonitor:
         self.miners = [MinerConfig(**config) for config in miners_config]
         self.poll_interval = poll_interval
         self.expected_hashrates = expected_hashrates or {}
-        self.collector = MetricsCollector(self.expected_hashrates)
+        self.collector = MetricsCollector(self.expected_hashrates, data_dir="data")
         self.logger = DataLogger()
         self.display = Display()
         self.web_server = WebServer(self.collector, self.logger.filename, port=web_port)
