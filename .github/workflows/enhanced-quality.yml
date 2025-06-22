@@ -1,5 +1,9 @@
 name: Enhanced Code Quality
 
+permissions:
+  contents: read
+  pull-requests: write
+
 on:
   push:
     branches: [ main, develop, test-pylint-enhancements ]
