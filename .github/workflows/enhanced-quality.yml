@@ -1,0 +1,167 @@
+name: Enhanced Code Quality
+
+on:
+  push:
+    branches: [ main, develop, test-pylint-enhancements ]
+    paths:
+      - '**.py'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**.py'
+
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-quality-${{ matrix.python-version }}-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-quality-${{ matrix.python-version }}-
+          ${{ runner.os }}-quality-
+    
+    - name: Install quality tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install pylint black flake8 mypy isort safety bandit
+        pip install pylint-json2html anybadge
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+    
+    - name: Run code formatting check (Black)
+      run: |
+        echo "## Black Code Formatting Check" > quality-report.md
+        echo "Checking code formatting..." >> quality-report.md
+        black --check --diff src/ scripts/ tests/ examples/ || echo "❌ Code formatting issues found" >> quality-report.md
+        echo "" >> quality-report.md
+    
+    - name: Run import sorting check (isort)
+      run: |
+        echo "## Import Sorting Check (isort)" >> quality-report.md
+        isort --check-only --diff src/ scripts/ tests/ examples/ || echo "❌ Import sorting issues found" >> quality-report.md
+        echo "" >> quality-report.md
+    
+    - name: Run flake8 style check
+      run: |
+        echo "## Flake8 Style Check" >> quality-report.md
+        echo "\`\`\`" >> quality-report.md
+        flake8 src/ scripts/ --max-line-length=120 --exclude=__pycache__,.git,.tox,dist,doc,*.egg >> quality-report.md || true
+        echo "\`\`\`" >> quality-report.md
+        echo "" >> quality-report.md
+    
+    - name: Run enhanced pylint analysis
+      run: |
+        echo "## Enhanced Pylint Analysis" >> quality-report.md
+        echo "### Detailed Code Quality Metrics" >> quality-report.md
+        echo "\`\`\`" >> quality-report.md
+        
+        # Run pylint with detailed reporting
+        pylint src/ scripts/ --rcfile=.pylintrc --output-format=text --reports=yes --score=yes >> quality-report.md || true
+        echo "\`\`\`" >> quality-report.md
+        
+        # Generate JSON output for machine processing
+        pylint src/ scripts/ --rcfile=.pylintrc --output-format=json --reports=no > pylint-results.json || true
+        
+        # Generate HTML report
+        pylint-json2html -f jsonextended -o pylint-report.html pylint-results.json || true
+        
+        # Extract and display key metrics
+        echo "### Quality Metrics Summary" >> quality-report.md
+        SCORE=$(pylint src/ scripts/ --rcfile=.pylintrc --score=yes --reports=no 2>/dev/null | grep "Your code has been rated" | grep -oE '[0-9]+\.[0-9]+' | head -1 || echo "N/A")
+        echo "- **Overall Score:** $SCORE/10" >> quality-report.md
+        echo "" >> quality-report.md
+    
+    - name: Run type checking (mypy)
+      run: |
+        echo "## Type Checking (mypy)" >> quality-report.md
+        echo "\`\`\`" >> quality-report.md
+        mypy src/ --ignore-missing-imports --no-strict-optional || echo "Type checking completed with issues" >> quality-report.md
+        echo "\`\`\`" >> quality-report.md
+        echo "" >> quality-report.md
+      continue-on-error: true
+    
+    - name: Run security check (bandit)
+      run: |
+        echo "## Security Analysis (bandit)" >> quality-report.md
+        echo "\`\`\`" >> quality-report.md
+        bandit -r src/ scripts/ -f txt || echo "Security check completed" >> quality-report.md
+        echo "\`\`\`" >> quality-report.md
+        echo "" >> quality-report.md
+      continue-on-error: true
+    
+    - name: Generate quality summary
+      run: |
+        echo "## Quality Check Summary" >> quality-summary.md
+        echo "### 🎯 Code Quality Assessment for Python ${{ matrix.python-version }}" >> quality-summary.md
+        echo "" >> quality-summary.md
+        
+        # Count various issue types from pylint JSON
+        if [ -f pylint-results.json ]; then
+          ERRORS=$(jq '[.[] | select(.type=="error")] | length' pylint-results.json 2>/dev/null || echo "0")
+          WARNINGS=$(jq '[.[] | select(.type=="warning")] | length' pylint-results.json 2>/dev/null || echo "0")
+          CONVENTIONS=$(jq '[.[] | select(.type=="convention")] | length' pylint-results.json 2>/dev/null || echo "0")
+          REFACTORS=$(jq '[.[] | select(.type=="refactor")] | length' pylint-results.json 2>/dev/null || echo "0")
+          
+          echo "| Metric | Count |" >> quality-summary.md
+          echo "|--------|-------|" >> quality-summary.md
+          echo "| Errors | $ERRORS |" >> quality-summary.md
+          echo "| Warnings | $WARNINGS |" >> quality-summary.md
+          echo "| Conventions | $CONVENTIONS |" >> quality-summary.md
+          echo "| Refactoring | $REFACTORS |" >> quality-summary.md
+          echo "" >> quality-summary.md
+        fi
+        
+        echo "### 📊 Tools Run:" >> quality-summary.md
+        echo "- ✅ **Pylint**: Advanced static analysis" >> quality-summary.md
+        echo "- ✅ **Black**: Code formatting check" >> quality-summary.md
+        echo "- ✅ **isort**: Import organization" >> quality-summary.md
+        echo "- ✅ **Flake8**: Style guide enforcement" >> quality-summary.md
+        echo "- ✅ **mypy**: Static type checking" >> quality-summary.md
+        echo "- ✅ **Bandit**: Security vulnerability scan" >> quality-summary.md
+        echo "" >> quality-summary.md
+        
+        # Combine reports
+        cat quality-summary.md quality-report.md > combined-quality-report.md
+    
+    - name: Upload quality reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: quality-reports-${{ matrix.python-version }}
+        path: |
+          combined-quality-report.md
+          quality-report.md
+          quality-summary.md
+          pylint-results.json
+          pylint-report.html
+      if: always()
+    
+    - name: Comment PR with quality summary
+      if: github.event_name == 'pull_request' && matrix.python-version == '3.12'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          if (fs.existsSync('quality-summary.md')) {
+            const summary = fs.readFileSync('quality-summary.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🔍 Enhanced Code Quality Report\n\n${summary}\n\n*Full detailed report available in workflow artifacts*`
+            });
+          }
+      continue-on-error: true
