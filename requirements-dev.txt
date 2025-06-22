@@ -27,3 +27,9 @@ mypy>=1.0.0
 
 # Pre-commit hooks
 pre-commit>=3.0.0
+
+# Additional quality tools
+radon>=5.1.0              # Code complexity analysis
+anybadge>=1.14.0          # Badge generation
+autopep8>=1.7.0           # Auto code formatting
+pydocstyle>=6.1.0         # Docstring style checking
