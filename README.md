@@ -22,6 +22,14 @@ A comprehensive Python monitoring tool for multiple Bitaxe miners with real-time
 - **Multi-Chart View**: All chart types visible simultaneously (stacked layout)
 - **Interactive**: Toggle between desktop and mobile layouts
 
+### **📈 Historic Data Analysis**
+- **3D Performance Landscapes**: Interactive visualizations of hashrate, efficiency, and stability
+- **Smart Recommendations**: AI-powered optimization suggestions based on historic data
+- **Sweet Spot Identification**: Find optimal voltage/frequency combinations for efficiency and low variance
+- **Quiet Operation Analysis**: Identify settings that maintain performance while minimizing fan noise
+- **Multi-Miner Comparison**: Compare performance across all miners with champion identification
+- **Comprehensive Reports**: Beautiful HTML reports with actionable insights
+
 ### **⚡ Comprehensive Metrics**
 - Hashrate (actual vs expected) with efficiency calculation
 - Power consumption and J/TH efficiency tracking
@@ -212,6 +220,19 @@ python src/bitaxe_monitor.py
 
 # Access web interface
 open http://localhost:8080
+```
+
+### Historic Data Analysis
+```bash
+# Generate comprehensive analysis report from last 24 hours
+python scripts/bitaxe_analysis_generator.py
+
+# Analyze different time windows
+python scripts/bitaxe_analysis_generator.py --hours 12  # Last 12 hours
+python scripts/bitaxe_analysis_generator.py --hours 48  # Last 48 hours
+
+# View generated report
+open generated_charts/bitaxe_analysis_YYYYMMDD_HHMMSS.html
 ```
 
 ### Example Console Output

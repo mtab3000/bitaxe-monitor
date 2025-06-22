@@ -5,6 +5,31 @@ All notable changes to the Bitaxe Monitor project will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-06-22
+
+### 🧠 Added Historic Data Analysis & AI-Powered Optimization
+
+#### Added
+- **Historic Data Analysis Generator**: `scripts/bitaxe_analysis_generator.py`
+  - Analyzes last 24 hours (configurable) of monitoring data
+  - Generates comprehensive HTML reports with interactive 3D visualizations
+  - Smart recommendations for optimal voltage/frequency combinations
+  - Identifies sweet spots for efficiency and low variance operation
+  - Multi-miner performance comparison with champion identification
+  - Quiet operation analysis (fan speed < 60%) with noise-friendly settings
+  - Beautiful HTML reports with Plotly.js 3D surface plots and correlation analysis
+
+#### Enhanced Features
+- **3D Performance Landscapes**: Interactive visualizations showing hashrate, efficiency, and stability across voltage/frequency combinations
+- **AI-Powered Recommendations**: Data-driven optimization suggestions based on actual performance patterns
+- **Comprehensive Analysis Reports**: Professional HTML output with actionable insights
+- **Real-World Optimization**: Uses actual monitoring data rather than theoretical calculations
+- **Time Window Flexibility**: Configurable analysis periods (6, 12, 24, 48+ hours)
+
+#### Dependencies
+- Added pandas and numpy to requirements for data analysis capabilities
+- Enhanced documentation with analysis generator usage guide
+
 ## [2.0.0] - 2025-06-22
 
 ### 🎉 Major Release - Complete Rewrite with Web Interface

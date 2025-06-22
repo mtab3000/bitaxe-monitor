@@ -23,6 +23,7 @@ bitaxe-monitor/
 │   ├── docker-start.sh         # Docker quick start (Linux/Mac)
 │   ├── docker-start.bat        # Docker quick start (Windows)
 │   ├── csv-visualizer.py       # Data visualization tool
+│   ├── bitaxe_analysis_generator.py  # Historic data analysis generator
 │   ├── install.sh              # Installation script
 │   ├── update.sh               # Update script
 │   └── get-pip.py              # Pip installer
@@ -32,6 +33,7 @@ bitaxe-monitor/
 │   └── run_tests.py            # Test runner script
 ├── docs/                        # Documentation
 │   ├── docker-deployment.md    # Docker deployment guide
+│   ├── analysis-generator.md   # Historic data analysis guide
 │   ├── api_reference.md        # API documentation
 │   └── troubleshooting.md      # Troubleshooting guide
 ├── examples/                    # Example configurations and scripts
@@ -74,6 +76,20 @@ bitaxe-monitor/
 - **`docker/Dockerfile`** - Multi-stage container build with health checks
 - **`docker/docker-compose.yml`** - Complete deployment configuration
 - **`scripts/docker-start.sh/.bat`** - Interactive deployment scripts
+
+### Scripts & Utilities
+
+- **`scripts/bitaxe_analysis_generator.py`** - Historic data analysis tool:
+  - Analyzes last 24 hours (configurable) of monitoring data
+  - Generates comprehensive HTML reports with 3D visualizations
+  - Identifies optimal settings for efficiency and low variance
+  - Provides smart recommendations based on actual performance data
+  - Creates interactive Plotly.js charts for hashrate, efficiency, and stability landscapes
+  - Includes quiet operation analysis and multi-miner comparisons
+
+- **`scripts/csv-visualizer.py`** - Legacy data visualization tool
+- **`scripts/install.sh/.bat`** - Installation automation scripts
+- **`scripts/update.sh`** - Update automation script
 
 ### Development & Testing
 
