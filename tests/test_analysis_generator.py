@@ -236,11 +236,11 @@ class TestAnalysisGeneratorIntegration(unittest.TestCase):
 
 def run_tests():
     """Run all tests"""
-    print("🧪 Testing Bitaxe Analysis Generator")
+    print("Testing Bitaxe Analysis Generator")
     print("=" * 50)
     
     if not ANALYZER_AVAILABLE:
-        print("❌ Analysis generator not available for testing")
+        print("ERROR: Analysis generator not available for testing")
         print("   Make sure pandas and numpy are installed")
         return False
     
@@ -258,11 +258,11 @@ def run_tests():
     
     print("\n" + "=" * 50)
     if result.wasSuccessful():
-        print("✅ All tests passed!")
+        print("SUCCESS: All tests passed!")
         return True
     else:
-        print(f"❌ {len(result.failures)} test(s) failed")
-        print(f"❌ {len(result.errors)} error(s) occurred")
+        print(f"FAILED: {len(result.failures)} test(s) failed")
+        print(f"ERROR: {len(result.errors)} error(s) occurred")
         return False
 
 if __name__ == "__main__":

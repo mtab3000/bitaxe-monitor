@@ -13,7 +13,7 @@ from pathlib import Path
 def run_analysis_example():
     """Run example analysis with different time windows"""
     
-    print("🚀 Bitaxe Analysis Generator - Example Usage")
+    print("Bitaxe Analysis Generator - Example Usage")
     print("=" * 60)
     
     # Change to scripts directory
@@ -46,7 +46,7 @@ def run_analysis_example():
         response = input(f"   Run this analysis? (y/N): ").strip().lower()
         
         if response in ['y', 'yes']:
-            print(f"   🔄 Running analysis for last {example['hours']} hours...")
+            print(f"   [RUNNING] Running analysis for last {example['hours']} hours...")
             
             try:
                 # Run the analysis generator
@@ -62,33 +62,33 @@ def run_analysis_example():
                 )
                 
                 if result.returncode == 0:
-                    print(f"   ✅ Analysis complete!")
-                    print(f"   📄 Report saved to: generated_charts/")
+                    print(f"   [SUCCESS] Analysis complete!")
+                    print(f"   [OUTPUT] Report saved to: generated_charts/")
                     
                     # Extract filename from output if possible
                     output_lines = result.stdout.split('\n')
                     for line in output_lines:
                         if 'Report saved to:' in line:
-                            print(f"   🔗 {line.strip()}")
+                            print(f"   [FILE] {line.strip()}")
                             break
                 else:
-                    print(f"   ❌ Analysis failed:")
+                    print(f"   [ERROR] Analysis failed:")
                     print(f"   Error: {result.stderr}")
                     
             except subprocess.TimeoutExpired:
-                print("   ⏰ Analysis timed out (>2 minutes)")
+                print("   [TIMEOUT] Analysis timed out (>2 minutes)")
             except FileNotFoundError:
-                print("   ❌ Analysis generator not found")
+                print("   [ERROR] Analysis generator not found")
                 print("   Make sure you're running from the project root directory")
             except Exception as e:
-                print(f"   ❌ Unexpected error: {e}")
+                print(f"   [ERROR] Unexpected error: {e}")
         else:
-            print("   ⏭️  Skipped")
+            print("   [SKIPPED] Skipped")
     
     print("\n" + "=" * 60)
-    print("📖 For detailed usage instructions, see:")
+    print("For detailed usage instructions, see:")
     print("   docs/analysis-generator.md")
-    print("\n💡 Analysis requires historic monitoring data from CSV files")
+    print("\nNOTE: Analysis requires historic monitoring data from CSV files")
     print("   Run the monitor first to collect data for analysis")
 
 if __name__ == "__main__":
