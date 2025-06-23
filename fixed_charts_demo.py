@@ -464,6 +464,9 @@ PERSISTENT_CHARTS_HTML = '''
 
 class FixedDemo:
     def __init__(self):
+        """
+        Initialize the FixedDemo web application, setting up the Flask app, miner baselines, server start time, and history buffers for variance tracking.
+        """
         self.app = Flask(__name__)
         self.setup_routes()
         self.base_hashrates = {'Demo-Gamma-1': 1200, 'Demo-Gamma-2': 1150, 'Demo-Gamma-3': 1100}
@@ -471,12 +474,23 @@ class FixedDemo:
         self.history = {name: deque(maxlen=60) for name in self.base_hashrates.keys()}
     
     def setup_routes(self):
+        """
+        Defines the Flask routes for the web dashboard and API endpoints.
+        
+        The root route ('/') serves the main HTML dashboard for real-time miner monitoring. The '/api/metrics' route returns a JSON response containing simulated metrics for each miner, including current hashrate, expected baseline, efficiency, power, temperature, and variance statistics over multiple time windows, as well as fleet-wide aggregates.
+        """
         @self.app.route('/')
         def index():
             return render_template_string(PERSISTENT_CHARTS_HTML)
         
         @self.app.route('/api/metrics')
         def api_metrics():
+            """
+            Generate and return simulated real-time metrics for all miners, including hashrate, efficiency, power, temperature, and variance statistics.
+            
+            Returns:
+                A Flask JSON response containing a timestamp, fleet-wide aggregates (total hashrate, power, efficiency, miner counts), and a list of per-miner metrics with variance calculations over multiple time windows.
+            """
             miners = []
             total_hashrate = 0
             total_power = 0
@@ -545,6 +559,11 @@ class FixedDemo:
             return jsonify(response)
     
     def run(self):
+        """
+        Starts the Flask web server for the mining dashboard and prints startup information to the console.
+        
+        The server listens on all interfaces at port 8080 and provides a real-time monitoring dashboard for mining hardware with persistent charts and variance tracking.
+        """
         print("=" * 80)
         print("FIXED ENHANCED VARIANCE MONITOR - CHARTS NEVER DISAPPEAR")
         print("=" * 80)

@@ -118,11 +118,22 @@ HTML_DEBUG = '''
 
 @app.route('/')
 def index():
+    """
+    Serve the debug web interface for monitoring mining devices.
+    
+    Returns:
+        The rendered HTML page containing the mining monitor debug interface.
+    """
     return render_template_string(HTML_DEBUG)
 
 @app.route('/api/metrics')
 def api_metrics():
     # Generate demo data
+    """
+    Return simulated miner metrics as a JSON response for debugging the web interface.
+    
+    The response includes a timestamp, aggregate hashrate and power, miner counts, and a list of three demo miners with randomized hashrate, power, temperature, and other operational metrics.
+    """
     miners = []
     for i in range(1, 4):
         base_hashrate = [1200, 1150, 1100][i-1]

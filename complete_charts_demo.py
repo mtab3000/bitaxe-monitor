@@ -418,6 +418,9 @@ COMPLETE_HTML = '''
 
 class CompleteDemo:
     def __init__(self):
+        """
+        Initialize the CompleteDemo application with Flask, simulated miner base hashrates, start time, and rolling history buffers for variance calculations.
+        """
         self.app = Flask(__name__)
         self.setup_routes()
         self.base_hashrates = {'Demo-Gamma-1': 1200, 'Demo-Gamma-2': 1150, 'Demo-Gamma-3': 1100}
@@ -425,12 +428,22 @@ class CompleteDemo:
         self.history = {name: deque(maxlen=60) for name in self.base_hashrates.keys()}
     
     def setup_routes(self):
+        """
+        Defines the Flask routes for the web application, serving the main dashboard page and providing simulated mining metrics via an API endpoint.
+        
+        The root route ('/') returns the complete HTML dashboard with embedded charts and UI. The '/api/metrics' route generates and returns simulated miner metrics, including hashrate, power, temperature, efficiency, and multi-window variance statistics for each miner, as well as fleet-level aggregates, in JSON format.
+        """
         @self.app.route('/')
         def index():
             return render_template_string(COMPLETE_HTML)
         
         @self.app.route('/api/metrics')
         def api_metrics():
+            """
+            Generate and return simulated mining fleet metrics, including per-miner statistics and fleet-wide aggregates, as a JSON response.
+            
+            The response includes real-time simulated values for hashrate, power, temperature, frequency, uptime, efficiency, and multi-window standard deviations for each miner, as well as fleet totals and efficiency.
+            """
             miners = []
             total_hashrate = 0
             total_power = 0
@@ -498,6 +511,9 @@ class CompleteDemo:
             return jsonify(response)
     
     def run(self):
+        """
+        Starts the Flask web server for the enhanced variance monitoring dashboard and prints startup information about available features and access URL.
+        """
         print("=" * 80)
         print("COMPLETE ENHANCED VARIANCE MONITOR WITH CHARTS")
         print("=" * 80)

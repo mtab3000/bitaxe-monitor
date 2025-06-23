@@ -22,6 +22,12 @@ class RepositoryChecker:
     """Comprehensive repository consistency checker"""
     
     def __init__(self, repo_path: str = "."):
+        """
+        Initialize the RepositoryChecker with the given repository path and set up tracking for errors, warnings, and informational messages.
+        
+        Parameters:
+            repo_path (str, optional): Path to the root of the repository to check. Defaults to the current directory.
+        """
         self.repo_path = Path(repo_path)
         self.errors = []
         self.warnings = []
@@ -32,26 +38,42 @@ class RepositoryChecker:
         self.expected_names = ['BitAxe-Gamma-1', 'BitAxe-Gamma-2', 'BitAxe-Gamma-3']
         
     def log_error(self, message: str):
-        """Log an error"""
+        """
+        Logs an error message, appends it to the error list, and prints it to the console.
+        """
         self.errors.append(f"[ERROR] {message}")
         print(f"[ERROR] {message}")
     
     def log_warning(self, message: str):
-        """Log a warning"""
+        """
+        Logs a warning message and appends it to the list of warnings.
+        """
         self.warnings.append(f"[WARNING] {message}")
         print(f"[WARNING] {message}")
     
     def log_info(self, message: str):
-        """Log info"""
+        """
+        Logs an informational message and appends it to the info messages list.
+        """
         self.info.append(f"[INFO] {message}")
         print(f"[INFO] {message}")
     
     def log_success(self, message: str):
-        """Log success"""
+        """
+        Log a success message and print it with an "[OK]" tag.
+        """
         print(f"[OK] {message}")
     
     def check_file_exists(self, file_path: str) -> bool:
-        """Check if a file exists"""
+        """
+        Checks whether the specified file exists in the repository.
+        
+        Parameters:
+            file_path (str): Relative path to the file within the repository.
+        
+        Returns:
+            bool: True if the file exists, False otherwise.
+        """
         full_path = self.repo_path / file_path
         exists = full_path.exists()
         if not exists:
@@ -59,7 +81,11 @@ class RepositoryChecker:
         return exists
     
     def check_ip_consistency(self):
-        """Check IP address consistency across all files"""
+        """
+        Checks key repository files for the presence of expected miner IP addresses to ensure network configuration consistency.
+        
+        Scans a predefined list of files for IP addresses matching the pattern `192.168.1.x` and verifies that at least two of the expected IPs are present in each file. Logs successes, warnings for missing IPs or files, and errors if file reading fails.
+        """
         print("\n[NETWORK] Checking IP Address Consistency...")
         
         # Files that should contain the correct IPs
@@ -100,7 +126,11 @@ class RepositoryChecker:
                 self.log_error(f"Error reading {file_path}: {e}")
     
     def check_enhanced_monitor_config(self):
-        """Check enhanced monitor configuration"""
+        """
+        Checks that the enhanced BitAxe monitor module exists, can be imported, and initializes key components such as the Flask app and variance trackers.
+        
+        Logs errors if the module is missing or fails to import, and logs successes if initialization and required attributes are present.
+        """
         print("\n[MONITOR] Checking Enhanced Monitor Configuration...")
         
         enhanced_monitor_path = self.repo_path / 'enhanced_bitaxe_monitor.py'
@@ -139,7 +169,11 @@ class RepositoryChecker:
             self.log_error(f"Enhanced monitor test failed: {e}")
     
     def check_docker_configuration(self):
-        """Check Docker configuration files"""
+        """
+        Checks Docker-related configuration files for correct references and settings.
+        
+        Verifies that the Dockerfile and docker-compose.yml exist and contain expected references to the enhanced monitor, correct port exposure, and appropriate IP configurations. Logs successes or warnings based on findings.
+        """
         print("\n[DOCKER] Checking Docker Configuration...")
         
         # Check Dockerfile
@@ -176,7 +210,11 @@ class RepositoryChecker:
             self.log_warning("docker-compose.yml not found")
     
     def check_github_workflows(self):
-        """Check GitHub workflow configurations"""
+        """
+        Check the presence and configuration of GitHub workflow files in the repository.
+        
+        Verifies that the `.github/workflows` directory exists and contains workflow YAML files. Specifically checks for the `enhanced-quality.yml` workflow and ensures it references `enhanced_bitaxe_monitor.py`, logging warnings if the file is missing, misconfigured, or has encoding issues.
+        """
         print("\n[GITHUB] Checking GitHub Workflows...")
         
         workflows_dir = self.repo_path / '.github' / 'workflows'
@@ -208,7 +246,9 @@ class RepositoryChecker:
             self.log_warning("enhanced-quality.yml workflow not found")
     
     def check_documentation_consistency(self):
-        """Check documentation consistency"""
+        """
+        Checks key documentation files for references to enhanced features or Chart.js, logging successes if found and warnings or informational messages if missing or absent.
+        """
         print("\n[DOCS] Checking Documentation Consistency...")
         
         # Check main documentation files
@@ -234,7 +274,11 @@ class RepositoryChecker:
                 self.log_warning(f"Documentation file not found: {doc_file}")
     
     def check_test_configuration(self):
-        """Check test configuration and consistency"""
+        """
+        Checks the presence and syntax validity of test files and test configuration files in the repository.
+        
+        Verifies that the `tests` directory exists, checks for the main test file and validates its syntax, and reports on the presence of optional test configuration files.
+        """
         print("\n[TESTS] Checking Test Configuration...")
         
         tests_dir = self.repo_path / 'tests'
@@ -265,7 +309,11 @@ class RepositoryChecker:
                 self.log_info(f"Optional test file not found: {config_file}")
     
     def check_dependencies(self):
-        """Check dependency files"""
+        """
+        Checks for the presence of essential dependencies in requirements files.
+        
+        Scans `requirements.txt` and `requirements-dev.txt` for the inclusion of `flask` and `requests`, logging successes or warnings based on findings.
+        """
         print("\n[DEPS] Checking Dependencies...")
         
         # Check requirements files
@@ -285,7 +333,11 @@ class RepositoryChecker:
                 self.log_warning(f"Requirements file not found: {req_file}")
     
     def check_security_and_quality(self):
-        """Check security and code quality configurations"""
+        """
+        Checks for the presence and content of security and code quality configuration files.
+        
+        Verifies that key files such as `.gitignore`, `SECURITY.md`, and `.pylintrc` exist in the repository. Additionally, inspects `.gitignore` to ensure it excludes common sensitive directories and files like `__pycache__` and `.env`. Logs successes, informational messages, or warnings based on findings.
+        """
         print("\n[SECURITY] Checking Security and Quality...")
         
         # Check for security files
@@ -309,7 +361,9 @@ class RepositoryChecker:
                 self.log_warning(".gitignore may be missing important exclusions")
     
     def generate_report(self):
-        """Generate final consistency report"""
+        """
+        Prints a summary report of repository consistency checks, listing successes, warnings, and errors, and returns True if no errors are present, otherwise False.
+        """
         print("\n" + "=" * 60)
         print("[REPORT] REPOSITORY CONSISTENCY REPORT")
         print("=" * 60)
@@ -341,7 +395,11 @@ class RepositoryChecker:
             return False
     
     def run_full_check(self):
-        """Run complete repository consistency check"""
+        """
+        Performs a comprehensive consistency check on the BitAxe Monitor repository.
+        
+        Runs all validation routines, including essential file presence, IP address consistency, configuration correctness, Docker and GitHub workflow setup, documentation, tests, dependencies, and security/quality files. Generates and returns a final report indicating repository readiness.
+        """
         print("[CHECK] BitAxe Monitor Repository Consistency Check")
         print("=" * 60)
         
@@ -374,7 +432,12 @@ class RepositoryChecker:
 
 
 def main():
-    """Main entry point"""
+    """
+    Runs the repository consistency checks and prints the overall status.
+    
+    Returns:
+        int: Exit code 0 if the repository passes all checks, 1 if issues are found.
+    """
     repo_path = os.path.dirname(os.path.abspath(__file__))
     checker = RepositoryChecker(repo_path)
     

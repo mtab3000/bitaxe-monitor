@@ -558,6 +558,9 @@ WORKING_HTML = '''
 # Demo data generation
 class WorkingDemo:
     def __init__(self):
+        """
+        Initialize the WorkingDemo application, setting up the Flask app, demo miner base hashrates, start time, and rolling hashrate history for variance calculations.
+        """
         self.app = Flask(__name__)
         self.setup_routes()
         self.base_hashrates = {'Demo-Gamma-1': 1200, 'Demo-Gamma-2': 1150, 'Demo-Gamma-3': 1100}
@@ -565,6 +568,11 @@ class WorkingDemo:
         self.history = {name: deque(maxlen=60) for name in self.base_hashrates.keys()}
     
     def setup_routes(self):
+        """
+        Defines the Flask routes for the web dashboard and metrics API.
+        
+        The root route ('/') serves the main dashboard page using a rendered HTML template. The '/api/metrics' route generates and returns simulated mining fleet metrics as JSON, including per-miner statistics with variance calculations and overall fleet summary data.
+        """
         @self.app.route('/')
         def index():
             return render_template_string(WORKING_HTML)
@@ -572,6 +580,11 @@ class WorkingDemo:
         @self.app.route('/api/metrics')
         def api_metrics():
             # Generate realistic demo data
+            """
+            Generate and return simulated mining fleet metrics as a JSON response for the dashboard API.
+            
+            The response includes per-miner statistics such as hashrate, efficiency, power, temperature, frequency, uptime, and variance metrics (standard deviation over 60s, 300s, and 600s), as well as fleet-wide summary statistics.
+            """
             miners = []
             total_hashrate = 0
             total_power = 0
@@ -639,6 +652,11 @@ class WorkingDemo:
             return jsonify(response)
     
     def run(self):
+        """
+        Starts the Flask web server and displays startup information for the Bitaxe Monitor demo.
+        
+        Runs the application on all network interfaces at port 8080, providing instructions and feature highlights for the real-time mining dashboard.
+        """
         print("=" * 80)
         print("WORKING BITAXE MONITOR - ENHANCED VARIANCE TRACKING WITH CHARTS")
         print("=" * 80)

@@ -27,6 +27,9 @@ class DemoMinerAPI:
     """Demo API that simulates bitaxe responses"""
     
     def __init__(self):
+        """
+        Initialize the DemoMinerAPI with base hashrates for each demo miner and record the simulation start time.
+        """
         self.base_hashrates = {
             'Demo-Gamma-1': 1200,
             'Demo-Gamma-2': 1150, 
@@ -35,7 +38,17 @@ class DemoMinerAPI:
         self.start_time = datetime.now()
     
     def get_system_info(self, miner_config, timeout=5):
-        """Return simulated miner data"""
+        """
+        Generate and return a dictionary of simulated miner metrics for a given miner configuration.
+        
+        The returned data mimics realistic Bitaxe miner responses, including hashrate, power consumption, temperatures, fan speed, voltages, nonce differences, share statistics, uptime, WiFi signal strength, stratum pool information, ASIC model, board version, and firmware version. Values are randomized within plausible ranges to simulate real hardware behavior.
+        
+        Parameters:
+            miner_config: Miner configuration object specifying the miner's identity.
+        
+        Returns:
+            dict: Simulated miner metrics with realistic variance for use in demo mode.
+        """
         miner_name = miner_config.name
         
         # Simulate some variance in hashrate
@@ -76,11 +89,22 @@ class DemoMetricsCollector(MetricsCollector):
     """Demo metrics collector with simulated API"""
     
     def __init__(self, expected_hashrates=None, data_dir="data"):
+        """
+        Initialize the DemoMetricsCollector with simulated miner data sources.
+        
+        Parameters:
+        	expected_hashrates (dict, optional): Mapping of miner identifiers to their expected hashrates for simulation purposes.
+        	data_dir (str, optional): Directory path for storing collected metrics data. Defaults to "data".
+        """
         super().__init__(expected_hashrates, data_dir)
         self.api = DemoMinerAPI()  # Use demo API instead of real one
 
 def main():
-    """Run demo mode monitor"""
+    """
+    Run the Bitaxe Monitor in demo mode using simulated miner data.
+    
+    This function initializes a simulated monitoring environment with three demo miners, generating realistic variance data for testing enhanced variance analytics features. It starts the web server, displays real-time summaries, logs metrics, and supports all enhanced variance monitoring capabilities without requiring actual mining hardware. The demo runs until interrupted by the user.
+    """
     print("=" * 80)
     print("BITAXE MONITOR - ENHANCED VARIANCE TRACKING - DEMO MODE")
     print("=" * 80)
