@@ -138,7 +138,7 @@ class RepositoryChecker:
         try:
             # Try to import and test
             sys.path.insert(0, str(self.repo_path))
-            from enhanced_bitaxe_monitor import EnhancedBitAxeMonitor, MinerConfig
+            from enhanced_bitaxe_monitor import EnhancedBitAxeMonitor
             
             # Test configuration
             test_config = [
