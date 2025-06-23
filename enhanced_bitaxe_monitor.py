@@ -392,62 +392,117 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
             });
         }
         
+        let isInitialized = false;
+        
+        function initializeUI(data) {
+            document.getElementById('minersGrid').innerHTML = '';
+            
+            data.miners.forEach(miner => {
+                if (miner.status === 'ONLINE') {
+                    const minerIdSafe = miner.miner_name.replace(/[^a-zA-Z0-9]/g, '');
+                    const minerCard = document.createElement('div');
+                    minerCard.className = 'miner-card';
+                    minerCard.id = 'miner-card-' + minerIdSafe;
+                    
+                    minerCard.innerHTML = 
+                        '<div class="miner-header"><div class="miner-name">' + miner.miner_name + '</div><div class="miner-status status-online" id="status-' + minerIdSafe + '">ONLINE</div></div>' +
+                        '<div id="metrics-' + minerIdSafe + '"></div>' +
+                        '<div class="variance-section" id="variance-' + minerIdSafe + '"></div>' +
+                        '<div class="charts-section">' +
+                        '<div class="chart-container"><div class="chart-title">Real-time Hashrate</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-hashrate"></canvas></div></div>' +
+                        '<div class="chart-container"><div class="chart-title">Directional Variance (vs Expected Baseline)</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-directional"></canvas></div></div>' +
+                        '<div class="chart-container"><div class="chart-title">Efficiency Tracking</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-efficiency"></canvas></div></div>' +
+                        '<div class="chart-container"><div class="chart-title">Variance Standard Deviation</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-variance"></canvas></div></div>' +
+                        '</div>';
+                    
+                    document.getElementById('minersGrid').appendChild(minerCard);
+                    
+                    // Create charts for this miner
+                    setTimeout(() => {
+                        ['hashrate', 'directional', 'efficiency', 'variance'].forEach(type => {
+                            createChart('chart-' + minerIdSafe + '-' + type, miner.miner_name, type, miner.expected_hashrate_gh);
+                        });
+                    }, 100);
+                } else {
+                    const minerIdSafe = miner.miner_name.replace(/[^a-zA-Z0-9]/g, '');
+                    const minerCard = document.createElement('div');
+                    minerCard.className = 'miner-card';
+                    minerCard.id = 'miner-card-' + minerIdSafe;
+                    
+                    minerCard.innerHTML = 
+                        '<div class="miner-header"><div class="miner-name">' + miner.miner_name + '</div><div class="miner-status status-offline" id="status-' + minerIdSafe + '">OFFLINE</div></div>' +
+                        '<div class="metric-row"><span class="metric-label">IP Address</span><span class="metric-value">' + miner.miner_ip + '</span></div>';
+                    
+                    document.getElementById('minersGrid').appendChild(minerCard);
+                }
+            });
+            
+            isInitialized = true;
+        }
+        
+        function updateMinerData(miner) {
+            const minerIdSafe = miner.miner_name.replace(/[^a-zA-Z0-9]/g, '');
+            const statusElement = document.getElementById('status-' + minerIdSafe);
+            const metricsElement = document.getElementById('metrics-' + minerIdSafe);
+            const varianceElement = document.getElementById('variance-' + minerIdSafe);
+            
+            if (miner.status === 'ONLINE') {
+                if (statusElement) {
+                    statusElement.textContent = 'ONLINE';
+                    statusElement.className = 'miner-status status-online';
+                }
+                
+                if (metricsElement) {
+                    const deviation = (miner.hashrate_gh - miner.expected_hashrate_gh).toFixed(1);
+                    const deviationSign = deviation >= 0 ? '+' : '';
+                    
+                    metricsElement.innerHTML = 
+                        '<div class="metric-row"><span class="metric-label">Hashrate</span><span class="metric-value">' + miner.hashrate_th.toFixed(3) + ' TH/s</span></div>' +
+                        '<div class="metric-row"><span class="metric-label">Expected</span><span class="metric-value">' + miner.expected_hashrate_th.toFixed(3) + ' TH/s</span></div>' +
+                        '<div class="metric-row"><span class="metric-label">Efficiency</span><span class="metric-value ' + getEfficiencyClass(miner.hashrate_efficiency_pct) + '">' + miner.hashrate_efficiency_pct.toFixed(1) + '%</span></div>' +
+                        '<div class="metric-row"><span class="metric-label">Deviation</span><span class="metric-value">' + deviationSign + deviation + ' GH/s</span></div>' +
+                        '<div class="metric-row"><span class="metric-label">Power</span><span class="metric-value">' + miner.power_w.toFixed(1) + ' W</span></div>' +
+                        '<div class="metric-row"><span class="metric-label">Temperature</span><span class="metric-value">' + miner.temperature_c.toFixed(1) + '°C</span></div>';
+                }
+                
+                if (varianceElement) {
+                    varianceElement.innerHTML = 
+                        '<div class="variance-title">Enhanced Variance Tracking</div>' +
+                        '<div class="variance-row"><span>Std Dev (60s):</span><span>' + (miner.hashrate_stddev_60s ? miner.hashrate_stddev_60s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
+                        '<div class="variance-row"><span>Std Dev (300s):</span><span>' + (miner.hashrate_stddev_300s ? miner.hashrate_stddev_300s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
+                        '<div class="variance-row"><span>Std Dev (600s):</span><span>' + (miner.hashrate_stddev_600s ? miner.hashrate_stddev_600s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
+                        '<div class="variance-row"><span>Expected Baseline:</span><span>' + miner.expected_hashrate_gh.toFixed(0) + ' GH/s</span></div>';
+                }
+                
+                updateChart(miner.miner_name, miner);
+            } else {
+                if (statusElement) {
+                    statusElement.textContent = 'OFFLINE';
+                    statusElement.className = 'miner-status status-offline';
+                }
+            }
+        }
+        
         function updateData() {
             fetch('/api/metrics').then(response => response.json()).then(data => {
                 document.getElementById('updateTime').textContent = 'Last updated: ' + new Date(data.timestamp).toLocaleString();
                 
+                // Update stats grid
                 document.getElementById('statsGrid').innerHTML = 
                     '<div class="stat-card"><div class="stat-label">Total Hashrate</div><div class="stat-value">' + data.total_hashrate_th.toFixed(3) + ' TH/s</div></div>' +
                     '<div class="stat-card"><div class="stat-label">Total Power</div><div class="stat-value">' + data.total_power_w.toFixed(0) + ' W</div></div>' +
                     '<div class="stat-card"><div class="stat-label">Fleet Efficiency</div><div class="stat-value ' + getEfficiencyClass(data.fleet_efficiency) + '">' + data.fleet_efficiency.toFixed(1) + '%</div></div>' +
                     '<div class="stat-card"><div class="stat-label">Miners Online</div><div class="stat-value">' + data.online_count + '/' + data.total_count + '</div></div>';
                 
-                let minersHtml = ''; let chartsToCreate = [];
-                data.miners.forEach(miner => {
-                    if (miner.status === 'ONLINE') {
-                        const deviation = (miner.hashrate_gh - miner.expected_hashrate_gh).toFixed(1);
-                        const deviationSign = deviation >= 0 ? '+' : '';
-                        const minerIdSafe = miner.miner_name.replace(/[^a-zA-Z0-9]/g, '');
-                        
-                        minersHtml += '<div class="miner-card">' +
-                            '<div class="miner-header"><div class="miner-name">' + miner.miner_name + '</div><div class="miner-status status-online">ONLINE</div></div>' +
-                            '<div class="metric-row"><span class="metric-label">Hashrate</span><span class="metric-value">' + miner.hashrate_th.toFixed(3) + ' TH/s</span></div>' +
-                            '<div class="metric-row"><span class="metric-label">Expected</span><span class="metric-value">' + miner.expected_hashrate_th.toFixed(3) + ' TH/s</span></div>' +
-                            '<div class="metric-row"><span class="metric-label">Efficiency</span><span class="metric-value ' + getEfficiencyClass(miner.hashrate_efficiency_pct) + '">' + miner.hashrate_efficiency_pct.toFixed(1) + '%</span></div>' +
-                            '<div class="metric-row"><span class="metric-label">Deviation</span><span class="metric-value">' + deviationSign + deviation + ' GH/s</span></div>' +
-                            '<div class="metric-row"><span class="metric-label">Power</span><span class="metric-value">' + miner.power_w.toFixed(1) + ' W</span></div>' +
-                            '<div class="metric-row"><span class="metric-label">Temperature</span><span class="metric-value">' + miner.temperature_c.toFixed(1) + '°C</span></div>' +
-                            '<div class="variance-section"><div class="variance-title">Enhanced Variance Tracking</div>' +
-                            '<div class="variance-row"><span>Std Dev (60s):</span><span>' + (miner.hashrate_stddev_60s ? miner.hashrate_stddev_60s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
-                            '<div class="variance-row"><span>Std Dev (300s):</span><span>' + (miner.hashrate_stddev_300s ? miner.hashrate_stddev_300s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
-                            '<div class="variance-row"><span>Std Dev (600s):</span><span>' + (miner.hashrate_stddev_600s ? miner.hashrate_stddev_600s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
-                            '<div class="variance-row"><span>Expected Baseline:</span><span>' + miner.expected_hashrate_gh.toFixed(0) + ' GH/s</span></div></div>' +
-                            '<div class="charts-section">' +
-                            '<div class="chart-container"><div class="chart-title">Real-time Hashrate</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-hashrate"></canvas></div></div>' +
-                            '<div class="chart-container"><div class="chart-title">Directional Variance (vs Expected Baseline)</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-directional"></canvas></div></div>' +
-                            '<div class="chart-container"><div class="chart-title">Efficiency Tracking</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-efficiency"></canvas></div></div>' +
-                            '<div class="chart-container"><div class="chart-title">Variance Standard Deviation</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-variance"></canvas></div></div>' +
-                            '</div></div>';
-                        
-                        chartsToCreate.push({ miner: miner.miner_name, expected: miner.expected_hashrate_gh });
-                    } else {
-                        minersHtml += '<div class="miner-card"><div class="miner-header"><div class="miner-name">' + miner.miner_name + '</div><div class="miner-status status-offline">OFFLINE</div></div>' +
-                            '<div class="metric-row"><span class="metric-label">IP Address</span><span class="metric-value">' + miner.miner_ip + '</span></div></div>';
-                    }
-                });
-                
-                document.getElementById('minersGrid').innerHTML = minersHtml;
-                
-                setTimeout(() => {
-                    chartsToCreate.forEach(item => {
-                        const minerIdSafe = item.miner.replace(/[^a-zA-Z0-9]/g, '');
-                        ['hashrate', 'directional', 'efficiency', 'variance'].forEach(type => {
-                            const chartKey = item.miner + '_' + type;
-                            if (!charts[chartKey]) createChart('chart-' + minerIdSafe + '-' + type, item.miner, type, item.expected);
-                        });
+                // Initialize UI only on first load
+                if (!isInitialized) {
+                    initializeUI(data);
+                } else {
+                    // Update existing miner data without recreating DOM elements
+                    data.miners.forEach(miner => {
+                        updateMinerData(miner);
                     });
-                    data.miners.forEach(miner => { if (miner.status === 'ONLINE') updateChart(miner.miner_name, miner); });
-                }, 200);
+                }
             }).catch(error => {
                 console.error('Error fetching data:', error);
                 document.getElementById('updateTime').textContent = 'Error: ' + error.message;
