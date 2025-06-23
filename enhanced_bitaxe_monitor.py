@@ -18,9 +18,8 @@ Features:
 - Professional web interface with Chart.js
 """
 
-import sys
-import os
-import time
+import requests
+import statistics
 import requests
 import statistics
 from datetime import datetime, timedelta
