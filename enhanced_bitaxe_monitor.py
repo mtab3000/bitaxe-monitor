@@ -215,36 +215,72 @@ class EnhancedBitAxeMonitor:
         """Print formatted console summary"""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
+        # Try to enable UTF-8 encoding on Windows
+        try:
+            if os.name == 'nt':
+                import codecs
+                sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+        except:
+            pass
+        
+        # Check if console supports emojis
+        use_emojis = True
+        try:
+            print("🚀", end="")
+        except UnicodeEncodeError:
+            use_emojis = False
+        
         # Clear screen and print header
         os.system('cls' if os.name == 'nt' else 'clear')
         print("=" * 80)
-        print(f"🚀 Enhanced BitAxe Monitor - Console View".center(80))
-        print(f"📊 {timestamp}".center(80))
+        if use_emojis:
+            print(f"🚀 Enhanced BitAxe Monitor - Console View".center(80))
+            print(f"📊 {timestamp}".center(80))
+        else:
+            print(f"Enhanced BitAxe Monitor - Console View".center(80))
+            print(f"{timestamp}".center(80))
         print("=" * 80)
         
         # Fleet summary
-        print(f"\n📈 FLEET SUMMARY")
+        if use_emojis:
+            print(f"\n📈 FLEET SUMMARY")
+        else:
+            print(f"\nFLEET SUMMARY")
         print(f"   Total Hashrate: {metrics_data['total_hashrate_th']:.3f} TH/s")
         print(f"   Total Power:    {metrics_data['total_power_w']:.1f} W")
         print(f"   Fleet Efficiency: {metrics_data['fleet_efficiency']:.1f}%")
         print(f"   Miners Online:  {metrics_data['online_count']}/{metrics_data['total_count']}")
         
         # Individual miners
-        print(f"\n⚒️  MINER DETAILS")
+        if use_emojis:
+            print(f"\n⚒️  MINER DETAILS")
+        else:
+            print(f"\nMINER DETAILS")
         print("-" * 80)
         print(f"{'Name':<20} {'Status':<8} {'Hashrate':<12} {'Efficiency':<12} {'Power':<8} {'Temp':<8}")
         print("-" * 80)
         
         for miner in metrics_data['miners']:
-            status_icon = "🟢" if miner['status'] == 'ONLINE' else "🔴"
-            efficiency_color = ""
-            if miner['status'] == 'ONLINE':
-                if miner['hashrate_efficiency_pct'] >= 95:
-                    efficiency_color = "✅"
-                elif miner['hashrate_efficiency_pct'] >= 85:
-                    efficiency_color = "⚠️ "
-                else:
-                    efficiency_color = "❌"
+            if use_emojis:
+                status_icon = "🟢" if miner['status'] == 'ONLINE' else "🔴"
+                efficiency_color = ""
+                if miner['status'] == 'ONLINE':
+                    if miner['hashrate_efficiency_pct'] >= 95:
+                        efficiency_color = "✅"
+                    elif miner['hashrate_efficiency_pct'] >= 85:
+                        efficiency_color = "⚠️ "
+                    else:
+                        efficiency_color = "❌"
+            else:
+                status_icon = "[ON]" if miner['status'] == 'ONLINE' else "[OFF]"
+                efficiency_color = ""
+                if miner['status'] == 'ONLINE':
+                    if miner['hashrate_efficiency_pct'] >= 95:
+                        efficiency_color = "[OK] "
+                    elif miner['hashrate_efficiency_pct'] >= 85:
+                        efficiency_color = "[WARN] "
+                    else:
+                        efficiency_color = "[LOW] "
             
             print(f"{miner['miner_name']:<20} {status_icon} {miner['status']:<6} "
                   f"{miner['hashrate_gh']:.1f} GH/s    "
@@ -252,7 +288,10 @@ class EnhancedBitAxeMonitor:
                   f"{miner['power_w']:.1f} W   "
                   f"{miner['temperature_c']:.1f}°C")
         
-        print(f"\n🔄 Next update in 30 seconds... (Press Ctrl+C to stop)")
+        if use_emojis:
+            print(f"\n🔄 Next update in 30 seconds... (Press Ctrl+C to stop)")
+        else:
+            print(f"\nNext update in 30 seconds... (Press Ctrl+C to stop)")
 
     def console_data_loop(self):
         """Console data collection loop"""
@@ -266,7 +305,7 @@ class EnhancedBitAxeMonitor:
                 self.running = False
                 break
             except Exception as e:
-                print(f"❌ Error in console loop: {e}")
+                print(f"Error in console loop: {e}")
                 time.sleep(30)
 
     def dashboard(self):
@@ -285,12 +324,12 @@ class EnhancedBitAxeMonitor:
         self.running = True
         
         if self.console_mode:
-            print(f"🚀 Starting Enhanced BitAxe Monitor - Console Mode")
-            print(f"📊 Monitoring {len(self.miners_config)} miners:")
+            print(f"Starting Enhanced BitAxe Monitor - Console Mode")
+            print(f"Monitoring {len(self.miners_config)} miners:")
             for miner in self.miners_config:
                 print(f"   - {miner.name} at {miner.ip} (expected: {miner.expected_hashrate_gh} GH/s)")
-            print(f"🌐 Web interface available at: http://localhost:{self.port}")
-            print(f"⏱️  30-second polling interval")
+            print(f"Web interface available at: http://localhost:{self.port}")
+            print(f"30-second polling interval")
             print("\n" + "=" * 80)
             
             # Start console data collection in separate thread
@@ -309,7 +348,7 @@ class EnhancedBitAxeMonitor:
                 while self.running:
                     time.sleep(1)
             except KeyboardInterrupt:
-                print(f"\n🛑 Monitor stopped by user")
+                print(f"\nMonitor stopped by user")
                 self.running = False
         else:
             logging.info(f"Starting Enhanced BitAxe Monitor on port {self.port}")
