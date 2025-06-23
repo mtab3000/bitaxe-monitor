@@ -14,7 +14,8 @@ MINERS_CONFIG = [
 
 # Web server configuration
 WEB_PORT = 8080
-WEB_HOST = '0.0.0.0'  # Listen on all interfaces
+WEB_HOST = '127.0.0.1'  # Default to localhost for security
+# Change to '0.0.0.0' only if you need external access and have proper security measures
 
 # API timeout settings
 API_TIMEOUT = 5  # seconds
