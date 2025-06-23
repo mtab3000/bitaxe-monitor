@@ -133,3 +133,8 @@ secrets.json
 # User-specific data
 user_data/
 local_data/
+
+# Cache and temporary files
+*.pyc
+*.pyo
+*.pyd

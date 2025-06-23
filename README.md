@@ -1,14 +1,13 @@
 # Enhanced BitAxe Monitor
 
-A comprehensive Python monitoring tool for multiple BitAxe miners with **real-time charts**, enhanced variance tracking, professional web dashboard, and Docker deployment support.
+A simple, focused Python monitoring tool for multiple BitAxe miners with **real-time charts** and enhanced variance tracking.
 
 ![Enhanced BitAxe Monitor](https://img.shields.io/badge/Python-3.9+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Enhanced Monitor](https://img.shields.io/badge/Enhanced%20Monitor-Working-brightgreen.svg)
 ![Charts](https://img.shields.io/badge/Charts-Functional-brightgreen.svg)
-![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)
 
-## 🎯 **ENHANCED FEATURES - NEW!**
+## 🎯 **Key Features**
 
 ### **📊 Real-time Charts with Chart.js**
 - **4 Live Charts per Miner**: Hashrate, Directional Variance, Efficiency, Standard Deviation
@@ -28,49 +27,34 @@ A comprehensive Python monitoring tool for multiple BitAxe miners with **real-ti
 - **BitAxe API Integration**: Direct connection to `/api/system/info` endpoints
 - **Error Handling**: Graceful offline miner handling with status indicators
 - **Configurable Settings**: Easy miner IP and expected hashrate configuration
-- **Persistent Tracking**: Variance data maintained across updates
 - **Professional Interface**: Modern web UI with responsive design
 
 ## 🚀 **Quick Start**
 
-### **Option 1: Enhanced Monitor (Recommended)**
-```bash
-# 1. Configure your miners (edit enhanced_bitaxe_monitor.py line 467)
+### **1. Configure Your Miners**
+Edit `enhanced_bitaxe_monitor.py` around line 467:
+```python
 miners_config = [
     {'name': 'BitAxe-Gamma-1', 'ip': '192.168.1.45', 'expected_hashrate_gh': 1200},
     {'name': 'BitAxe-Gamma-2', 'ip': '192.168.1.46', 'expected_hashrate_gh': 1150},
     {'name': 'BitAxe-Gamma-3', 'ip': '192.168.1.47', 'expected_hashrate_gh': 1100}
 ]
-
-# 2. Install dependencies
-pip install flask requests
-
-# 3. Run enhanced monitor  
-python enhanced_bitaxe_monitor.py
-
-# 4. Open browser
-http://localhost:8080
 ```
 
-### **Option 2: Docker Deployment**
+### **2. Install Dependencies**
 ```bash
-# Clone repository
-git clone https://github.com/mtab3000/bitaxe-monitor.git
-cd bitaxe-monitor
-
-# Configure miners in docker-compose.yml (already set to .45, .46, .47)
-# Start enhanced monitor
-cd docker
-docker-compose up -d
-
-# Monitor logs
-docker-compose logs -f
-
-# Access dashboard
-http://localhost:8080
+pip install -r requirements.txt
 ```
 
-## 📊 **Enhanced Chart Features**
+### **3. Run the Monitor**
+```bash
+python enhanced_bitaxe_monitor.py
+```
+
+### **4. Access Dashboard**
+Open your browser to: `http://localhost:8080`
+
+## 📊 **Chart Features**
 
 ### **Real-time Hashrate Chart**
 - Live GH/s performance tracking
@@ -93,108 +77,20 @@ http://localhost:8080
 - Multiple time windows (60s/300s/600s)
 - Stability indicator for hashrate consistency
 
-## 🔧 **Configuration**
+## 📈 **Monitored Metrics**
 
-### **Miner Configuration**
-Edit `enhanced_bitaxe_monitor.py` at line 467:
-```python
-miners_config = [
-    {'name': 'Your-Miner-Name', 'ip': '192.168.1.XX', 'expected_hashrate_gh': XXXX},
-    # Add more miners as needed
-]
-```
-
-### **Docker Environment Variables**
-```yaml
-environment:
-  - MINER_1_NAME=BitAxe-Gamma-1
-  - MINER_1_IP=192.168.1.45
-  - MINER_1_EXPECTED_HASHRATE=1200
-  # Configure additional miners...
-```
-
-## 📈 **Classic Features**
-
-### **Comprehensive Metrics**
+### **Per Miner**
 - Hashrate (actual vs expected) with efficiency calculation
-- Power consumption and J/TH efficiency tracking  
-- Temperature monitoring (ASIC + VR)
-- Voltage tracking (set, actual, input)
-- Fan speed and frequency monitoring
-- Pool connection and share statistics
+- Power consumption tracking
+- Temperature monitoring
+- Frequency and voltage readings
+- Uptime statistics
 
-### **Smart Analytics**
-- Expected hashrate calculation based on ASIC model and frequency
-- Efficiency scoring with visual alerts
-- Historic performance tracking
-- Multi-miner fleet management
-
-### **Web Dashboard**
-- **Real-time Updates**: Auto-refresh every 5 seconds
-- **Mobile Responsive**: Works on phones and tablets
-- **Professional Design**: Clean, modern interface
-- **Status Indicators**: Visual online/offline status
-- **Fleet Overview**: Summary statistics for all miners
-
-## 🐳 **Docker Features**
-
-### **Environment-based Configuration**
-- No hardcoded IPs in container
-- Flexible miner configuration via environment variables
-- Persistent data storage with named volumes
-
-### **Production Ready**
-- Health checks and auto-restart
-- Resource limits and logging configuration
-- Network isolation and security
-- Container orchestration with docker-compose
-
-## 📁 **Project Structure**
-
-```
-bitaxe-monitor/
-├── enhanced_bitaxe_monitor.py    # 🆕 Enhanced monitor with charts
-├── config.py                     # Configuration template
-├── QUICK_START_GUIDE.md          # Setup instructions
-├── src/                          # Original source code
-├── docker/                       # Docker deployment
-├── tests/                        # Test files
-├── examples/                     # Configuration examples
-├── docs/                         # Documentation
-└── .github/workflows/            # CI/CD workflows
-```
-
-## 🧪 **Testing**
-
-```bash
-# Test enhanced monitor configuration
-python test_config.py
-
-# Run full test suite
-pytest tests/ -v
-
-# Test Docker build
-cd docker && docker build -t bitaxe-monitor:test .
-```
-
-## 🏆 **Enhanced vs Classic**
-
-| Feature | Classic Monitor | Enhanced Monitor |
-|---------|----------------|------------------|
-| **Charts** | ❌ Static data only | ✅ **Real-time Chart.js** |
-| **Variance Tracking** | ❌ Basic | ✅ **Multi-window + Directional** |
-| **Baseline Comparison** | ❌ No | ✅ **Expected vs Actual** |
-| **Visual Interface** | ❌ Basic HTML | ✅ **Professional Dashboard** |
-| **API Integration** | ✅ Yes | ✅ **Enhanced** |
-| **Docker Support** | ✅ Yes | ✅ **Improved** |
-
-## 📋 **Requirements**
-
-- **Python**: 3.9+ (recommended: 3.11)
-- **Dependencies**: Flask, Requests
-- **Network**: BitAxe miners accessible via HTTP
-- **Browser**: Modern browser with JavaScript enabled
-- **Docker**: Optional, for containerized deployment
+### **Fleet Overview**
+- Total hashrate across all miners
+- Combined power consumption
+- Fleet efficiency percentage
+- Online/offline miner count
 
 ## 🔗 **API Endpoints**
 
@@ -242,36 +138,27 @@ GET /api/metrics          # JSON metrics for all miners
 - Ensure miners are powered and connected
 - Test API directly: `http://[miner-ip]/api/system/info`
 
-### **Docker Issues**
-- Check environment variables in docker-compose.yml
-- Verify port 8080 is not in use: `netstat -tlnp | grep 8080`
-- Check container logs: `docker-compose logs -f`
+## 📋 **Requirements**
 
-## 🛡️ **Security**
+- **Python**: 3.9+ (recommended: 3.11)
+- **Dependencies**: Flask, Requests (see requirements.txt)
+- **Network**: BitAxe miners accessible via HTTP
+- **Browser**: Modern browser with JavaScript enabled
 
-- **Input Validation**: All user inputs sanitized
-- **CORS Protection**: Secure API endpoints
-- **Container Security**: Non-root user, minimal attack surface
-- **Network Isolation**: Docker networking for secure deployment
+## 📁 **Project Structure**
+
+```
+bitaxe-monitor/
+├── enhanced_bitaxe_monitor.py    # Main monitor application
+├── requirements.txt              # Python dependencies
+├── README.md                     # This file
+├── license.txt                   # MIT license
+└── .gitignore                    # Git ignore rules
+```
 
 ## 📄 **License**
 
 MIT License - see [LICENSE](license.txt) for details.
-
-## 🤝 **Contributing**
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open Pull Request
-
-## 🎉 **Acknowledgments**
-
-- BitAxe community for the excellent mining hardware
-- Chart.js for beautiful real-time visualizations
-- Flask community for the robust web framework
-- Contributors who helped improve the monitoring capabilities
 
 ---
 
