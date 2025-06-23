@@ -287,8 +287,10 @@ class TestConfigurationValidation(unittest.TestCase):
             self.skipTest("Enhanced monitor not available")
         
         # Test empty configuration
-        with self.assertRaises((ValueError, TypeError)):
+        # Test that empty configuration raises ValueError
+        with self.assertRaises(ValueError) as context:
             EnhancedBitAxeMonitor([], port=8082)
+        self.assertIn("configuration", str(context.exception).lower())
         
         # Test invalid IP format
         invalid_config = [{'name': 'Test', 'ip': 'invalid-ip', 'expected_hashrate_gh': 1200}]
