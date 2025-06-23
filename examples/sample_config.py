@@ -20,11 +20,11 @@ basic_config = [
 
 advanced_config = [
     # Standard miners on default port 80
-    {'name': 'Office-Gamma-1', 'ip': '192.168.1.100'},
-    {'name': 'Office-Gamma-2', 'ip': '192.168.1.101'},
+    {'name': 'Office-Gamma-1', 'ip': '192.168.1.45'},
+    {'name': 'Office-Gamma-2', 'ip': '192.168.1.46'},
     
     # Miner with custom port
-    {'name': 'Basement-Gamma', 'ip': '192.168.1.200', 'port': 8080},
+    {'name': 'Basement-Gamma', 'ip': '192.168.1.47', 'port': 8080},
     
     # Miners on different subnet
     {'name': 'Garage-Gamma-1', 'ip': '192.168.2.50'},

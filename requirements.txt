@@ -1,14 +1,16 @@
-# Production dependencies
-requests>=2.25.0
-flask>=2.2.2
-python-dateutil>=2.8.0
-pandas>=1.5.0
-numpy>=1.21.0
+# Enhanced BitAxe Monitor - Production Dependencies
 
-# Development dependencies (optional)
-# Uncomment for development environment
-# pylint>=2.15.0
-# black>=22.0.0
-# pytest>=7.0.0
-# pytest-cov>=4.0.0
-# bandit>=1.7.0
+# Core web framework
+flask>=2.3.0
+
+# HTTP requests for BitAxe API communication
+requests>=2.31.0
+
+# Date/time utilities for variance tracking
+python-dateutil>=2.8.2
+
+# Optional dependencies for enhanced features
+# Uncomment if using advanced analytics features:
+# pandas>=2.0.0
+# numpy>=1.24.0
+# matplotlib>=3.6.0

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug - Bitaxe Monitor API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Bitaxe Monitor API Debug Test</h1>
+    
+    <div class="test-result info">
+        <strong>Testing API Endpoints...</strong>
+    </div>
+    
+    <div id="test-results"></div>
+    
+    <h2>Raw API Responses:</h2>
+    <div id="api-responses"></div>
+    
+    <script>
+        const testResults = document.getElementById('test-results');
+        const apiResponses = document.getElementById('api-responses');
+        
+        function addResult(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = message;
+            testResults.appendChild(div);
+        }
+        
+        function addApiResponse(title, data) {
+            const div = document.createElement('div');
+            div.innerHTML = `<h3>${title}</h3><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            apiResponses.appendChild(div);
+        }
+        
+        async function testApiEndpoints() {
+            try {
+                // Test /api/metrics
+                addResult('Testing /api/metrics...', 'info');
+                const metricsResponse = await fetch('/api/metrics');
+                if (metricsResponse.ok) {
+                    const metricsData = await metricsResponse.json();
+                    addResult(`✓ /api/metrics working - ${metricsData.miners.length} miners found`, 'success');
+                    addApiResponse('/api/metrics', metricsData);
+                    
+                    // Test variance summary
+                    addResult('Testing /api/variance/summary...', 'info');
+                    const varianceResponse = await fetch('/api/variance/summary');
+                    if (varianceResponse.ok) {
+                        const varianceData = await varianceResponse.json();
+                        addResult('✓ /api/variance/summary working', 'success');
+                        addApiResponse('/api/variance/summary', varianceData);
+                    } else {
+                        addResult(`✗ /api/variance/summary failed: ${varianceResponse.status}`, 'error');
+                    }
+                    
+                    // Test history for first miner
+                    if (metricsData.miners.length > 0) {
+                        const minerName = metricsData.miners[0].miner_name;
+                        addResult(`Testing /api/history/${minerName}...`, 'info');
+                        const historyResponse = await fetch(`/api/history/${minerName}`);
+                        if (historyResponse.ok) {
+                            const historyData = await historyResponse.json();
+                            addResult(`✓ /api/history/${minerName} working - ${historyData.length} data points`, 'success');
+                            addApiResponse(`/api/history/${minerName}`, historyData.slice(0, 3)); // Show first 3 points
+                        } else {
+                            addResult(`✗ /api/history/${minerName} failed: ${historyResponse.status}`, 'error');
+                        }
+                    }
+                    
+                } else {
+                    addResult(`✗ /api/metrics failed: ${metricsResponse.status}`, 'error');
+                }
+                
+            } catch (error) {
+                addResult(`✗ Network error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Run tests when page loads
+        window.onload = function() {
+            addResult('Starting API tests...', 'info');
+            testApiEndpoints();
+        };
+        
+        // Auto-refresh every 10 seconds
+        setInterval(function() {
+            testResults.innerHTML = '';
+            apiResponses.innerHTML = '';
+            testApiEndpoints();
+        }, 10000);
+    </script>
+</body>
+</html>

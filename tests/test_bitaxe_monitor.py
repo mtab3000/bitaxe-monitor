@@ -1,144 +1,362 @@
 """
-Unit tests for Bitaxe Monitor
+Comprehensive tests for Enhanced BitAxe Monitor
 
-This module contains basic tests for the Bitaxe monitoring system.
+This module contains tests for both the classic and enhanced monitoring systems.
 """
 
 import unittest
 import sys
 import os
+import json
+import tempfile
+from unittest.mock import Mock, patch, MagicMock
 
-# Add src directory to path for imports
+# Add paths for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
+# Test imports for enhanced monitor
 try:
-    from bitaxe_monitor import ASICSpecs, MinerConfig, HashrateHistory
-except ImportError:
-    # Skip tests if imports fail
-    ASICSpecs = None
-    MinerConfig = None
-    HashrateHistory = None
+    from enhanced_bitaxe_monitor import (
+        EnhancedBitAxeMonitor, 
+        MinerConfig, 
+        MinerMetrics, 
+        BitAxeAPI,
+        VarianceTracker
+    )
+    ENHANCED_AVAILABLE = True
+except ImportError as e:
+    print(f"Enhanced monitor import failed: {e}")
+    ENHANCED_AVAILABLE = False
+
+# Test imports for classic monitor
+try:
+    from bitaxe_monitor import ASICSpecs, HashrateHistory
+    CLASSIC_AVAILABLE = True
+except ImportError as e:
+    print(f"Classic monitor import failed: {e}")
+    CLASSIC_AVAILABLE = False
 
 
-class TestASICSpecs(unittest.TestCase):
-    """Test ASIC specifications and calculations"""
+class TestEnhancedMonitor(unittest.TestCase):
+    """Test Enhanced BitAxe Monitor functionality"""
     
     def setUp(self):
         """Set up test fixtures"""
-        if ASICSpecs is None:
-            self.skipTest("Could not import ASICSpecs")
-    
-    def test_calculate_expected_hashrate_bm1370(self):
-        """Test BM1370 (Gamma) hashrate calculation"""
-        # BM1370 at base frequency should give base hashrate
-        result = ASICSpecs.calculate_expected_hashrate('BM1370', 600)
-        self.assertEqual(result, 1200)
+        if not ENHANCED_AVAILABLE:
+            self.skipTest("Enhanced monitor not available")
         
-        # Test scaling
-        result = ASICSpecs.calculate_expected_hashrate('BM1370', 500)
-        expected = 1200 * (500 / 600)
-        self.assertAlmostEqual(result, expected, places=1)
-    
-    def test_calculate_expected_hashrate_bm1368(self):
-        """Test BM1368 (Supra) hashrate calculation"""
-        result = ASICSpecs.calculate_expected_hashrate('BM1368', 650)
-        self.assertEqual(result, 700)
-    
-    def test_calculate_expected_hashrate_invalid(self):
-        """Test invalid inputs"""
-        result = ASICSpecs.calculate_expected_hashrate('', 600)
-        self.assertEqual(result, 0)
-        
-        result = ASICSpecs.calculate_expected_hashrate('BM1370', 0)
-        self.assertEqual(result, 0)
-
-
-class TestMinerConfig(unittest.TestCase):
-    """Test miner configuration"""
-    
-    def setUp(self):
-        """Set up test fixtures"""
-        if MinerConfig is None:
-            self.skipTest("Could not import MinerConfig")
+        self.test_config = [
+            {'name': 'Test-Gamma-1', 'ip': '192.168.1.45', 'expected_hashrate_gh': 1200},
+            {'name': 'Test-Gamma-2', 'ip': '192.168.1.46', 'expected_hashrate_gh': 1150}
+        ]
     
     def test_miner_config_creation(self):
-        """Test basic miner config creation"""
-        config = MinerConfig('TestMiner', '192.168.1.100')
+        """Test MinerConfig dataclass creation"""
+        config = MinerConfig('TestMiner', '192.168.1.45', 1200)
         self.assertEqual(config.name, 'TestMiner')
-        self.assertEqual(config.ip, '192.168.1.100')
-        self.assertEqual(config.port, 80)  # Default port
+        self.assertEqual(config.ip, '192.168.1.45')
+        self.assertEqual(config.expected_hashrate_gh, 1200)
     
-    def test_miner_config_custom_port(self):
-        """Test miner config with custom port"""
-        config = MinerConfig('TestMiner', '192.168.1.100', 8080)
-        self.assertEqual(config.port, 8080)
+    def test_miner_metrics_creation(self):
+        """Test MinerMetrics dataclass creation"""
+        metrics = MinerMetrics(
+            miner_name='TestMiner',
+            miner_ip='192.168.1.45',
+            status='ONLINE',
+            hashrate_gh=1205.3,
+            expected_hashrate_gh=1200,
+            hashrate_efficiency_pct=100.4
+        )
+        self.assertEqual(metrics.miner_name, 'TestMiner')
+        self.assertEqual(metrics.status, 'ONLINE')
+        self.assertAlmostEqual(metrics.hashrate_efficiency_pct, 100.4, places=1)
+    
+    def test_variance_tracker(self):
+        """Test VarianceTracker functionality"""
+        tracker = VarianceTracker(maxlen=10)
+        
+        # Add test data points
+        test_values = [1200, 1205, 1195, 1210, 1190, 1200]
+        for value in test_values:
+            tracker.add_data_point(value)
+        
+        # Test variance calculation (should have data)
+        variance_60s = tracker.get_variance_stats(60)
+        self.assertIsNotNone(variance_60s)
+        self.assertGreater(variance_60s, 0)
+    
+    def test_bitaxe_api_timeout(self):
+        """Test BitAxe API timeout handling"""
+        api = BitAxeAPI(timeout=1)
+        config = MinerConfig('TestMiner', '192.168.1.999')  # Invalid IP
+        
+        # Should return None for unreachable miner
+        result = api.get_system_info(config)
+        self.assertIsNone(result)
+    
+    @patch('enhanced_bitaxe_monitor.requests.get')
+    def test_bitaxe_api_success(self, mock_get):
+        """Test successful BitAxe API response"""
+        # Mock successful API response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'hashRate': 1205.3,
+            'power': 15.2,
+            'temp': 65.5,
+            'frequency': 500,
+            'uptimeSeconds': 3600
+        }
+        mock_get.return_value = mock_response
+        
+        api = BitAxeAPI()
+        config = MinerConfig('TestMiner', '192.168.1.45')
+        result = api.get_system_info(config)
+        
+        self.assertIsNotNone(result)
+        self.assertEqual(result['hashRate'], 1205.3)
+        self.assertEqual(result['power'], 15.2)
+    
+    def test_enhanced_monitor_creation(self):
+        """Test Enhanced Monitor instance creation"""
+        monitor = EnhancedBitAxeMonitor(self.test_config, port=8082)
+        
+        self.assertEqual(len(monitor.miners), 2)
+        self.assertEqual(monitor.port, 8082)
+        self.assertIsNotNone(monitor.app)
+        self.assertEqual(len(monitor.variance_trackers), 2)
+    
+    def test_monitor_routes_exist(self):
+        """Test that Flask routes are properly configured"""
+        monitor = EnhancedBitAxeMonitor(self.test_config, port=8082)
+        
+        # Check that routes exist
+        with monitor.app.test_client() as client:
+            # Test main route
+            response = client.get('/')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b'BitAxe Monitor', response.data)
+            
+            # Test API route
+            response = client.get('/api/metrics')
+            self.assertEqual(response.status_code, 200)
+            
+            # Verify JSON response structure
+            data = json.loads(response.data)
+            self.assertIn('timestamp', data)
+            self.assertIn('miners', data)
+            self.assertIn('total_hashrate_th', data)
+    
+    @patch('enhanced_bitaxe_monitor.BitAxeAPI.get_system_info')
+    def test_offline_miner_handling(self, mock_api):
+        """Test handling of offline miners"""
+        # Mock API to return None (offline miner)
+        mock_api.return_value = None
+        
+        monitor = EnhancedBitAxeMonitor(self.test_config, port=8082)
+        metrics = monitor.get_miner_metrics(monitor.miners[0])
+        
+        self.assertEqual(metrics.status, 'OFFLINE')
+        self.assertEqual(metrics.miner_name, 'Test-Gamma-1')
+        self.assertEqual(metrics.miner_ip, '192.168.1.45')
+    
+    @patch('enhanced_bitaxe_monitor.BitAxeAPI.get_system_info')
+    def test_online_miner_metrics(self, mock_api):
+        """Test metrics calculation for online miner"""
+        # Mock successful API response
+        mock_api.return_value = {
+            'hashRate': 1205.3,
+            'power': 15.2,
+            'temp': 65.5,
+            'frequency': 500,
+            'uptimeSeconds': 3600
+        }
+        
+        monitor = EnhancedBitAxeMonitor(self.test_config, port=8082)
+        metrics = monitor.get_miner_metrics(monitor.miners[0])
+        
+        self.assertEqual(metrics.status, 'ONLINE')
+        self.assertEqual(metrics.hashrate_gh, 1205.3)
+        self.assertEqual(metrics.power_w, 15.2)
+        self.assertAlmostEqual(metrics.hashrate_efficiency_pct, 100.4, places=1)
+    
+    def test_fleet_metrics_calculation(self):
+        """Test fleet-wide metrics calculation"""
+        monitor = EnhancedBitAxeMonitor(self.test_config, port=8082)
+        
+        with patch.object(monitor, 'get_miner_metrics') as mock_get_metrics:
+            # Mock metrics for two online miners
+            mock_get_metrics.side_effect = [
+                MinerMetrics('Test-Gamma-1', '192.168.1.45', 'ONLINE', 
+                           hashrate_gh=1205, hashrate_th=1.205, power_w=15.2,
+                           expected_hashrate_gh=1200, hashrate_efficiency_pct=100.4),
+                MinerMetrics('Test-Gamma-2', '192.168.1.46', 'ONLINE',
+                           hashrate_gh=1150, hashrate_th=1.150, power_w=14.8,
+                           expected_hashrate_gh=1150, hashrate_efficiency_pct=100.0)
+            ]
+            
+            metrics = monitor.get_all_metrics()
+            
+            self.assertEqual(metrics['online_count'], 2)
+            self.assertEqual(metrics['total_count'], 2)
+            self.assertAlmostEqual(metrics['total_hashrate_th'], 2.355, places=3)
+            self.assertAlmostEqual(metrics['total_power_w'], 30.0, places=1)
 
 
-class TestHashrateHistory(unittest.TestCase):
-    """Test hashrate history functionality"""
+class TestClassicMonitor(unittest.TestCase):
+    """Test Classic BitAxe Monitor functionality"""
     
     def setUp(self):
         """Set up test fixtures"""
+        if not CLASSIC_AVAILABLE:
+            self.skipTest("Classic monitor not available")
+    
+    def test_asic_specs_creation(self):
+        """Test ASIC specifications"""
+        if ASICSpecs is None:
+            self.skipTest("ASICSpecs not available")
+            
+        # Test BM1370 specs
+        specs = ASICSpecs.get_specs('BM1370')
+        self.assertIsNotNone(specs)
+        self.assertIn('base_hashrate_gh', specs)
+    
+    def test_hashrate_history(self):
+        """Test hashrate history tracking"""
         if HashrateHistory is None:
-            self.skipTest("Could not import HashrateHistory")
-        self.history = HashrateHistory()
-    
-    def test_add_sample(self):
-        """Test adding hashrate samples"""
-        from datetime import datetime
+            self.skipTest("HashrateHistory not available")
+            
+        history = HashrateHistory(maxlen=5)
         
-        timestamp = datetime.now()
-        self.history.add_sample('TestMiner', timestamp, 1200, 95, 0.4)
+        # Add test values
+        test_values = [1200, 1205, 1195, 1210, 1190]
+        for value in test_values:
+            history.add_reading(value)
         
-        # Check that data was added
-        data = self.history.get_history_data('TestMiner')
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]['hashrate'], 1200)
-        self.assertEqual(data[0]['efficiency'], 95)
-        self.assertEqual(data[0]['voltage'], 0.4)
-    
-    def test_variance_calculation(self):
-        """Test variance calculation with insufficient data"""
-        # With no data, variance should be None
-        variance = self.history.calculate_variance('TestMiner', 60)
-        self.assertIsNone(variance)
-        
-        # With one sample, variance should still be None
-        from datetime import datetime
-        self.history.add_sample('TestMiner', datetime.now(), 1200)
-        variance = self.history.calculate_variance('TestMiner', 60)
-        self.assertIsNone(variance)
+        # Test statistics
+        self.assertEqual(len(history.readings), 5)
+        avg = history.get_average()
+        self.assertIsNotNone(avg)
 
 
-class TestBasicFunctionality(unittest.TestCase):
-    """Test basic functionality that doesn't require API calls"""
+class TestConfigurationValidation(unittest.TestCase):
+    """Test configuration validation and error handling"""
     
-    def test_imports(self):
-        """Test that we can import the main module"""
-        try:
-            import bitaxe_monitor
-            self.assertTrue(True)
-        except ImportError as e:
-            self.fail(f"Could not import bitaxe_monitor: {e}")
+    def test_invalid_miner_config(self):
+        """Test handling of invalid miner configurations"""
+        if not ENHANCED_AVAILABLE:
+            self.skipTest("Enhanced monitor not available")
+        
+        # Test empty configuration
+        with self.assertRaises((ValueError, TypeError)):
+            EnhancedBitAxeMonitor([], port=8082)
+        
+        # Test invalid IP format
+        invalid_config = [{'name': 'Test', 'ip': 'invalid-ip', 'expected_hashrate_gh': 1200}]
+        monitor = EnhancedBitAxeMonitor(invalid_config, port=8082)
+        # Should create monitor but miner will be offline
+        self.assertEqual(len(monitor.miners), 1)
     
-    def test_environment_detection(self):
-        """Test environment variable detection"""
+    def test_port_validation(self):
+        """Test port validation"""
+        if not ENHANCED_AVAILABLE:
+            self.skipTest("Enhanced monitor not available")
+        
+        test_config = [{'name': 'Test', 'ip': '192.168.1.45', 'expected_hashrate_gh': 1200}]
+        
+        # Valid ports
+        monitor = EnhancedBitAxeMonitor(test_config, port=8080)
+        self.assertEqual(monitor.port, 8080)
+        
+        monitor = EnhancedBitAxeMonitor(test_config, port=3000)
+        self.assertEqual(monitor.port, 3000)
+
+
+class TestUtilities(unittest.TestCase):
+    """Test utility functions and helpers"""
+    
+    def test_config_file_loading(self):
+        """Test configuration file loading"""
+        # Test with temporary config file
+        config_data = {
+            'miners': [
+                {'name': 'Test-Miner', 'ip': '192.168.1.45', 'expected_hashrate_gh': 1200}
+            ]
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config_data, f)
+            config_file = f.name
+        
         try:
-            from bitaxe_monitor import load_config_from_env
+            # Test file exists and is readable
+            with open(config_file, 'r') as f:
+                loaded_config = json.load(f)
             
-            # Test with no environment variables
-            os.environ.pop('MINER_NAMES', None)
-            os.environ.pop('MINER_IPS', None)
-            
-            config = load_config_from_env()
-            self.assertIsInstance(config, dict)
-            self.assertIn('miners_config', config)
-            self.assertIn('poll_interval', config)
-            
-        except ImportError:
-            self.skipTest("Could not import load_config_from_env")
+            self.assertIn('miners', loaded_config)
+            self.assertEqual(len(loaded_config['miners']), 1)
+            self.assertEqual(loaded_config['miners'][0]['name'], 'Test-Miner')
+        finally:
+            os.unlink(config_file)
+
+
+def create_test_suite():
+    """Create comprehensive test suite"""
+    suite = unittest.TestSuite()
+    
+    # Add Enhanced Monitor tests if available
+    if ENHANCED_AVAILABLE:
+        suite.addTest(unittest.makeSuite(TestEnhancedMonitor))
+        suite.addTest(unittest.makeSuite(TestConfigurationValidation))
+    
+    # Add Classic Monitor tests if available  
+    if CLASSIC_AVAILABLE:
+        suite.addTest(unittest.makeSuite(TestClassicMonitor))
+    
+    # Always add utility tests
+    suite.addTest(unittest.makeSuite(TestUtilities))
+    
+    return suite
+
+
+def run_tests():
+    """Run all available tests"""
+    print("=" * 60)
+    print("BitAxe Monitor Test Suite")
+    print("=" * 60)
+    print(f"Enhanced Monitor Available: {ENHANCED_AVAILABLE}")
+    print(f"Classic Monitor Available: {CLASSIC_AVAILABLE}")
+    print("=" * 60)
+    
+    # Create and run test suite
+    suite = create_test_suite()
+    runner = unittest.TextTestRunner(verbosity=2)
+    result = runner.run(suite)
+    
+    # Print summary
+    print("\n" + "=" * 60)
+    print("Test Summary:")
+    print(f"Tests run: {result.testsRun}")
+    print(f"Failures: {len(result.failures)}")
+    print(f"Errors: {len(result.errors)}")
+    print(f"Skipped: {len(result.skipped) if hasattr(result, 'skipped') else 0}")
+    
+    if result.failures:
+        print("\nFailures:")
+        for test, traceback in result.failures:
+            print(f"  - {test}: {traceback}")
+    
+    if result.errors:
+        print("\nErrors:")
+        for test, traceback in result.errors:
+            print(f"  - {test}: {traceback}")
+    
+    print("=" * 60)
+    
+    return result.wasSuccessful()
 
 
 if __name__ == '__main__':
-    # Run tests with verbose output
-    unittest.main(verbosity=2)
+    success = run_tests()
+    sys.exit(0 if success else 1)

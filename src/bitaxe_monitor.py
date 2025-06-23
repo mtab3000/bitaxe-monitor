@@ -2154,6 +2154,28 @@ class WebServer:
                 })
             except Exception as e:
                 return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/debug')
+        def debug_page():
+            """Serve debug page to test API endpoints"""
+            try:
+                with open('debug_web.html', 'r', encoding='utf-8') as f:
+                    return f.read()
+            except:
+                return '''
+                <h1>Debug Page</h1>
+                <p>Testing API endpoints...</p>
+                <script>
+                fetch('/api/metrics')
+                    .then(response => response.json())
+                    .then(data => {
+                        document.body.innerHTML += '<h2>API Working!</h2><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                    })
+                    .catch(error => {
+                        document.body.innerHTML += '<h2>API Error: ' + error + '</h2>';
+                    });
+                </script>
+                '''
     
     def run(self):
         """Run the web server in a separate thread"""

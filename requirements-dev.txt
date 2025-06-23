@@ -1,35 +1,51 @@
-# Development dependencies for Bitaxe Monitor
+# Enhanced BitAxe Monitor - Development Dependencies
 # Install with: pip install -r requirements-dev.txt
 
 # Include production requirements
 -r requirements.txt
 
+# Core testing framework
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+pytest-flask>=1.2.0
+
 # Code quality and linting
-pylint>=2.15.0
-black>=22.0.0
-isort>=5.10.0
-flake8>=5.0.0
-
-# Testing
-pytest>=7.0.0
-pytest-cov>=4.0.0
-pytest-mock>=3.10.0
-
-# Security
-bandit>=1.7.0
-
-# Documentation
-sphinx>=5.0.0
-sphinx-rtd-theme>=1.0.0
+pylint>=3.0.0
+black>=23.0.0
+isort>=5.12.0
+flake8>=6.0.0
 
 # Type checking
-mypy>=1.0.0
+mypy>=1.5.0
 
-# Pre-commit hooks
-pre-commit>=3.0.0
+# Security scanning
+bandit>=1.7.5
+safety>=2.3.0
 
-# Additional quality tools
-radon>=5.1.0              # Code complexity analysis
-anybadge>=1.14.0          # Badge generation
-autopep8>=1.7.0           # Auto code formatting
-pydocstyle>=6.1.0         # Docstring style checking
+# Documentation generation
+sphinx>=7.0.0
+sphinx-rtd-theme>=1.3.0
+
+# Code complexity and quality analysis
+radon>=6.0.0
+anybadge>=1.14.0
+
+# Auto-formatting and style
+autopep8>=2.0.0
+pydocstyle>=6.3.0
+
+# Pre-commit hooks for development
+pre-commit>=3.4.0
+
+# Development server tools
+flask-cors>=4.0.0         # For API development
+watchdog>=3.0.0           # File watching for development
+
+# Performance and profiling (optional)
+# memory-profiler>=0.61.0
+# py-spy>=0.3.14
+
+# Container development (optional)
+# docker>=6.1.0
+# docker-compose>=1.29.0
