@@ -43,9 +43,9 @@ class TestEnhancedMonitor(unittest.TestCase):
     
     def setUp(self):
         """
-        Prepares the test environment for Enhanced BitAxe Monitor tests.
+        Sets up the test environment for Enhanced BitAxe Monitor tests.
         
-        Skips tests if the enhanced monitor is unavailable and sets up a sample miner configuration for use in test cases.
+        Skips the test if the enhanced monitor is unavailable and initializes a sample miner configuration for use in test cases.
         """
         if not ENHANCED_AVAILABLE:
             self.skipTest("Enhanced monitor not available")
@@ -57,7 +57,7 @@ class TestEnhancedMonitor(unittest.TestCase):
     
     def test_miner_config_creation(self):
         """
-        Tests that the MinerConfig dataclass is correctly instantiated with the provided name, IP address, and expected hashrate.
+        Verify that MinerConfig is instantiated with the correct name, IP address, and expected hashrate.
         """
         config = MinerConfig('TestMiner', '192.168.1.45', 1200)
         self.assertEqual(config.name, 'TestMiner')
@@ -66,7 +66,7 @@ class TestEnhancedMonitor(unittest.TestCase):
     
     def test_miner_metrics_creation(self):
         """
-        Verifies that the MinerMetrics dataclass is correctly instantiated and its attributes are set as expected.
+        Test that MinerMetrics instances are created with the correct attribute values.
         """
         metrics = MinerMetrics(
             miner_name='TestMiner',
@@ -82,7 +82,7 @@ class TestEnhancedMonitor(unittest.TestCase):
     
     def test_variance_tracker(self):
         """
-        Tests that the VarianceTracker correctly calculates variance after adding multiple data points.
+        Verify that VarianceTracker computes a positive variance after multiple data points are added.
         """
         tracker = VarianceTracker(maxlen=10)
         
@@ -98,7 +98,7 @@ class TestEnhancedMonitor(unittest.TestCase):
     
     def test_bitaxe_api_timeout(self):
         """
-        Tests that the BitAxeAPI returns None when attempting to retrieve system info from an unreachable miner.
+        Test that BitAxeAPI.get_system_info returns None when the miner is unreachable.
         """
         api = BitAxeAPI(timeout=1)
         config = MinerConfig('TestMiner', '192.168.1.999')  # Invalid IP
@@ -110,9 +110,9 @@ class TestEnhancedMonitor(unittest.TestCase):
     @patch('enhanced_bitaxe_monitor.requests.get')
     def test_bitaxe_api_success(self, mock_get):
         """
-        Tests that the BitAxeAPI correctly returns system information when the API responds successfully.
+        Verify that BitAxeAPI returns correct system information when the API responds successfully.
         
-        Mocks a valid API response and verifies that the returned data contains expected hashrate and power values.
+        Mocks a valid API response and asserts that the returned data includes the expected hashrate and power values.
         """
         # Mock successful API response
         mock_response = Mock()
@@ -136,7 +136,7 @@ class TestEnhancedMonitor(unittest.TestCase):
     
     def test_enhanced_monitor_creation(self):
         """
-        Tests that an EnhancedBitAxeMonitor instance is created with the correct number of miners, port, Flask app, and variance trackers.
+        Verify that an EnhancedBitAxeMonitor instance initializes with the expected miners, port, Flask app, and variance trackers.
         """
         monitor = EnhancedBitAxeMonitor(self.test_config, port=8082)
         
@@ -147,7 +147,7 @@ class TestEnhancedMonitor(unittest.TestCase):
     
     def test_monitor_routes_exist(self):
         """
-        Verifies that the main and API routes of the EnhancedBitAxeMonitor Flask app are accessible and return the expected status codes and response structure.
+        Test that the main (`/`) and API (`/api/metrics`) routes of the EnhancedBitAxeMonitor Flask app are accessible and return the expected status codes and JSON structure.
         """
         monitor = EnhancedBitAxeMonitor(self.test_config, port=8082)
         
@@ -171,9 +171,7 @@ class TestEnhancedMonitor(unittest.TestCase):
     @patch('enhanced_bitaxe_monitor.BitAxeAPI.get_system_info')
     def test_offline_miner_handling(self, mock_api):
         """
-        Test that the monitor correctly identifies and reports an offline miner when the API returns no data.
-        
-        Verifies that the miner's status is set to 'OFFLINE' and that the miner's name and IP are accurately reflected in the metrics.
+        Verify that the monitor sets a miner's status to 'OFFLINE' and preserves miner details when the API returns no data, simulating an offline miner.
         """
         # Mock API to return None (offline miner)
         mock_api.return_value = None
@@ -188,7 +186,9 @@ class TestEnhancedMonitor(unittest.TestCase):
     @patch('enhanced_bitaxe_monitor.BitAxeAPI.get_system_info')
     def test_online_miner_metrics(self, mock_api):
         """
-        Test that metrics for an online miner are correctly calculated and populated when the API returns valid system information.
+        Verify that metrics for an online miner are accurately populated when the API returns valid system information.
+        
+        This test mocks a successful API response and checks that the miner's status is set to 'ONLINE' and that hashrate, power, and efficiency metrics reflect the returned values.
         """
         # Mock successful API response
         mock_api.return_value = {
@@ -209,7 +209,7 @@ class TestEnhancedMonitor(unittest.TestCase):
     
     def test_fleet_metrics_calculation(self):
         """
-        Tests that the EnhancedBitAxeMonitor correctly aggregates fleet-wide metrics, including online miner count, total hashrate, and total power, using mocked miner metrics.
+        Verify that EnhancedBitAxeMonitor aggregates fleet metrics correctly by mocking miner metrics and checking online count, total hashrate (TH), and total power (W).
         """
         monitor = EnhancedBitAxeMonitor(self.test_config, port=8082)
         
@@ -237,14 +237,14 @@ class TestClassicMonitor(unittest.TestCase):
     
     def setUp(self):
         """
-        Sets up the test environment for classic monitor tests, skipping tests if the classic monitor is unavailable.
+        Prepare the test environment for classic monitor tests, skipping all tests if the classic monitor module is unavailable.
         """
         if not CLASSIC_AVAILABLE:
             self.skipTest("Classic monitor not available")
     
     def test_asic_specs_creation(self):
         """
-        Tests retrieval of ASIC specifications for the 'BM1370' model and verifies expected specification fields are present.
+        Test that ASIC specifications for the 'BM1370' model can be retrieved and contain the expected fields.
         """
         if ASICSpecs is None:
             self.skipTest("ASICSpecs not available")
@@ -256,7 +256,7 @@ class TestClassicMonitor(unittest.TestCase):
     
     def test_hashrate_history(self):
         """
-        Tests that HashrateHistory correctly tracks a fixed number of hashrate readings and computes their average.
+        Verify that HashrateHistory maintains a fixed-length list of readings and accurately computes the average hashrate.
         """
         if HashrateHistory is None:
             self.skipTest("HashrateHistory not available")
@@ -279,9 +279,9 @@ class TestConfigurationValidation(unittest.TestCase):
     
     def test_invalid_miner_config(self):
         """
-        Test that the EnhancedBitAxeMonitor correctly handles invalid miner configurations.
+        Test handling of invalid miner configurations in EnhancedBitAxeMonitor.
         
-        Verifies that creating a monitor with an empty configuration raises an exception, and that a configuration with an invalid IP address results in a monitor instance where the miner is marked as offline.
+        Verifies that initializing the monitor with an empty configuration raises an exception, and that providing a miner with an invalid IP address results in a monitor instance where the miner is present but marked as offline.
         """
         if not ENHANCED_AVAILABLE:
             self.skipTest("Enhanced monitor not available")
@@ -298,7 +298,7 @@ class TestConfigurationValidation(unittest.TestCase):
     
     def test_port_validation(self):
         """
-        Verifies that the EnhancedBitAxeMonitor correctly accepts and sets valid port numbers during initialization.
+        Test that EnhancedBitAxeMonitor initializes with the specified valid port numbers.
         """
         if not ENHANCED_AVAILABLE:
             self.skipTest("Enhanced monitor not available")
@@ -318,7 +318,7 @@ class TestUtilities(unittest.TestCase):
     
     def test_config_file_loading(self):
         """
-        Tests loading a miner configuration from a temporary JSON file and verifies its contents.
+        Test loading a miner configuration from a temporary JSON file and verify that the contents match the expected structure and values.
         """
         # Test with temporary config file
         config_data = {
@@ -345,12 +345,12 @@ class TestUtilities(unittest.TestCase):
 
 def create_test_suite():
     """
-    Constructs and returns a unittest test suite including all relevant test classes for the BitAxe Monitor system.
+    Builds and returns a unittest test suite containing all applicable BitAxe Monitor test classes.
     
-    The suite conditionally includes enhanced and classic monitor tests based on module availability, and always includes utility tests.
+    The suite includes enhanced and classic monitor tests if their modules are available, and always includes utility tests.
     
     Returns:
-        suite (unittest.TestSuite): The assembled test suite ready for execution.
+        unittest.TestSuite: The assembled test suite.
     """
     suite = unittest.TestSuite()
     
@@ -371,10 +371,10 @@ def create_test_suite():
 
 def run_tests():
     """
-    Runs the BitAxe Monitor test suite, prints a detailed summary of results, and returns overall success status.
+    Execute the BitAxe Monitor test suite, display a detailed summary of results, and return whether all tests passed.
     
     Returns:
-        bool: True if all tests pass, False otherwise.
+        bool: True if all tests pass; False otherwise.
     """
     print("=" * 60)
     print("BitAxe Monitor Test Suite")
