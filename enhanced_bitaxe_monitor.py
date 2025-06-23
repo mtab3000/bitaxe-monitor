@@ -117,7 +117,9 @@ class EnhancedBitAxeMonitor:
         try:
             response = requests.get(f'http://{miner.ip}/api/system/info', timeout=5)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            print(f"Fetched data from {miner.name} ({miner.ip}): {data}")  # DEBUG LINE
+            return data
         except requests.exceptions.RequestException as e:
             logging.warning(f"Failed to fetch data from {miner.name} ({miner.ip}): {e}")
             return None    
@@ -180,7 +182,7 @@ class EnhancedBitAxeMonitor:
         
         for miner in self.miners_config:
             raw_data = self.fetch_miner_data(miner)
-            metrics = self.parse_miner_metrics(miner, raw_data)
+            metrics = self.parse_miner_metrics(miner, raw_data if raw_data is not None else {})
             miners_data.append(metrics.__dict__)
             
             if metrics.status == 'ONLINE':
@@ -191,7 +193,14 @@ class EnhancedBitAxeMonitor:
         # Calculate fleet efficiency
         total_expected_th = sum(miner.expected_hashrate_gh for miner in self.miners_config) / 1000.0
         fleet_efficiency = (total_hashrate_th / total_expected_th * 100) if total_expected_th > 0 else 0
-        
+
+        # Convert all deques in chart_data to lists for JSON serialization
+        serializable_chart_data = {}
+        for miner_name, miner_chart in self.chart_data.items():
+            serializable_chart_data[miner_name] = {
+                key: list(value) for key, value in miner_chart.items()
+            }
+
         return {
             'timestamp': datetime.now().isoformat(),
             'total_hashrate_th': total_hashrate_th,
@@ -200,7 +209,7 @@ class EnhancedBitAxeMonitor:
             'online_count': online_count,
             'total_count': len(self.miners_config),
             'miners': miners_data,
-            'chart_data': self.chart_data
+            'chart_data': serializable_chart_data
         }
     
     def run(self):
@@ -432,33 +441,49 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
                 }
             });
             isInitialized = true;
-        }-value ${getEfficiencyClass(miner.hashrate_efficiency_pct)}">${miner.hashrate_efficiency_pct.toFixed(1)}%</span>
+        }
+        
+        function updateMinerData(miner, data) {
+            const minerIdSafe = miner.miner_name.replace(/[^a-zA-Z0-9]/g, '');
+            // Update status
+            const statusElem = document.getElementById(`status-${minerIdSafe}`);
+            if (statusElem) {
+                statusElem.textContent = miner.status;
+                statusElem.className = 'status ' + (miner.status === 'ONLINE' ? 'status-online' : 'status-offline');
+            }
+            // Update metrics
+            const metricsElem = document.getElementById(`metrics-${minerIdSafe}`);
+            if (metricsElem && miner.status === 'ONLINE') {
+                metricsElem.innerHTML = `
+                    <div class="metric">
+                        <span class="metric-label">IP Address</span>
+                        <span class="metric-value">${miner.miner_ip}</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Deviation</span>
-                        <span class="metric-value">${deviationSign}${deviation} GH/s</span>
+                        <span class="metric-label">Hashrate</span>
+                        <span class="metric-value">${miner.hashrate_gh.toFixed(1)} GH/s</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Efficiency</span>
+                        <span class="metric-value ${getEfficiencyClass(miner.hashrate_efficiency_pct)}">${miner.hashrate_efficiency_pct.toFixed(1)}%</span>
                     </div>
                     <div class="metric">
                         <span class="metric-label">Power</span>
-                        <span class="metric-value">${miner.power_w.toFixed(1)} W</span>
+                        <span class="metric-value">${miner.power_w} W</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Temperature</span>
-                        <span class="metric-value">${miner.temperature_c.toFixed(1)}°C</span>
+                        <span class="metric-label">Temp</span>
+                        <span class="metric-value">${miner.temperature_c}°C</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">StdDev 60s</span>
-                        <span class="metric-value">${miner.hashrate_stddev_60s.toFixed(1)}</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">StdDev 300s</span>
-                        <span class="metric-value">${miner.hashrate_stddev_300s.toFixed(1)}</span>
+                        <span class="metric-label">Uptime</span>
+                        <span class="metric-value">${Math.floor(miner.uptime_s/3600)}h ${(Math.floor(miner.uptime_s/60)%60)}m</span>
                     </div>
                 `;
-                updateCharts(miner.miner_name, data);
             }
+            // Update charts
+            updateCharts(miner.miner_name, data);
         }
-        
         function updateData() {
             fetch('/api/metrics')
                 .then(response => response.json())
