@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Enhanced BitAxe Monitor - Complete Implementation with Console View
+Enhanced BitAxe Monitor - Beautiful Design with Advanced Metrics
 
-Working monitor with advanced charts, variance tracking, statistical analysis, and console output.
+Professional monitoring tool with dynamic expected hashrate, J/TH efficiency, and reference lines.
 """
 
 import sys
@@ -26,7 +26,7 @@ class MinerConfig:
     """Configuration for a BitAxe miner"""
     name: str
     ip: str
-    expected_hashrate_gh: float = 1100
+    base_expected_hashrate_gh: float = 1100  # Base hashrate at standard frequency
 
 @dataclass  
 class MinerMetrics:
@@ -43,15 +43,17 @@ class MinerMetrics:
     hashrate_stddev_300s: float = 0
     hashrate_stddev_600s: float = 0
     power_w: float = 0
+    efficiency_j_th: float = 0  # J/TH efficiency
     temperature_c: float = 0
     frequency_mhz: float = 0
     voltage_v: float = 0
+    set_voltage_v: float = 0
     uptime_s: int = 0
     fan_speed_rpm: int = 0
     chip_temp_c: float = 0
 
 class EnhancedBitAxeMonitor:
-    """Enhanced BitAxe Monitor with console and web interface"""
+    """Enhanced BitAxe Monitor with beautiful design and advanced metrics"""
     
     def __init__(self, miners_config_raw: List[Dict], port: int = 8080, console_mode: bool = False):
         self.miners_config = [MinerConfig(**config) for config in miners_config_raw]
@@ -67,11 +69,11 @@ class EnhancedBitAxeMonitor:
             self.chart_data[miner.name] = {
                 'timestamps': deque(maxlen=self.max_data_points),
                 'hashrates': deque(maxlen=self.max_data_points),
-                'variances': deque(maxlen=self.max_data_points),
+                'expected_hashrates': deque(maxlen=self.max_data_points),
                 'efficiencies': deque(maxlen=self.max_data_points),
-                'std_devs': deque(maxlen=self.max_data_points),
-                'power': deque(maxlen=self.max_data_points),
-                'temperature': deque(maxlen=self.max_data_points)
+                'j_th_efficiencies': deque(maxlen=self.max_data_points),
+                'voltages': deque(maxlen=self.max_data_points),
+                'temperatures': deque(maxlen=self.max_data_points)
             }
         
         # Flask routes
@@ -82,6 +84,13 @@ class EnhancedBitAxeMonitor:
         self.running = False
         self.console_thread = None
         self.latest_metrics = {}
+
+    def calculate_expected_hashrate(self, frequency_mhz: float, base_hashrate: float) -> float:
+        """Calculate expected hashrate based on frequency scaling from base frequency"""
+        base_frequency = 600.0  # Base frequency in MHz
+        if frequency_mhz > 0:
+            return base_hashrate * (frequency_mhz / base_frequency)
+        return base_hashrate
 
     def fetch_miner_data(self, miner: MinerConfig) -> Optional[Dict]:
         """Fetch data from a single BitAxe miner"""
@@ -105,8 +114,8 @@ class EnhancedBitAxeMonitor:
                 miner_name=miner.name,
                 miner_ip=miner.ip,
                 status='OFFLINE',
-                expected_hashrate_gh=miner.expected_hashrate_gh,
-                expected_hashrate_th=miner.expected_hashrate_gh / 1000.0
+                expected_hashrate_gh=miner.base_expected_hashrate_gh,
+                expected_hashrate_th=miner.base_expected_hashrate_gh / 1000.0
             )
         
         try:
@@ -115,27 +124,36 @@ class EnhancedBitAxeMonitor:
             hashrate_th = hashrate_gh / 1000.0
             power_w = float(raw_data.get('power', 0))
             temperature_c = float(raw_data.get('temp', 0))
+            frequency_mhz = float(raw_data.get('frequency', 600))
+            # Correct voltage fields for ASIC core voltage (try multiple possible field names)
+            voltage_v = float(raw_data.get('coreVoltage', raw_data.get('vCore', raw_data.get('asicVoltage', 0))))  # Measured ASIC voltage
+            set_voltage_v = float(raw_data.get('coreVoltageSet', raw_data.get('targetVoltage', raw_data.get('voltageSet', 0))))  # Set ASIC voltage
             uptime_s = int(raw_data.get('uptimeSeconds', 0))
             
-            # Calculate efficiency
-            efficiency_pct = (hashrate_gh / miner.expected_hashrate_gh * 100) if miner.expected_hashrate_gh > 0 else 0
+            # Calculate dynamic expected hashrate based on frequency
+            expected_hashrate_gh = self.calculate_expected_hashrate(frequency_mhz, miner.base_expected_hashrate_gh)
+            expected_hashrate_th = expected_hashrate_gh / 1000.0
+            
+            # Calculate efficiency and J/TH
+            efficiency_pct = (hashrate_gh / expected_hashrate_gh * 100) if expected_hashrate_gh > 0 else 0
+            efficiency_j_th = (power_w / hashrate_th) if hashrate_th > 0 else 0
             
             # Store chart data
             current_time = datetime.now().strftime("%H:%M:%S")
             chart_data = self.chart_data[miner.name]
             chart_data['timestamps'].append(current_time)
             chart_data['hashrates'].append(hashrate_gh)
-            chart_data['variances'].append(hashrate_gh - miner.expected_hashrate_gh)
+            chart_data['expected_hashrates'].append(expected_hashrate_gh)
             chart_data['efficiencies'].append(efficiency_pct)
-            chart_data['power'].append(power_w)
-            chart_data['temperature'].append(temperature_c)
+            chart_data['j_th_efficiencies'].append(efficiency_j_th)
+            chart_data['voltages'].append(voltage_v)
+            chart_data['temperatures'].append(temperature_c)
             
             # Calculate standard deviations
             hashrates = list(chart_data['hashrates'])
             stddev_60s = statistics.stdev(hashrates[-2:]) if len(hashrates) >= 2 else 0
             stddev_300s = statistics.stdev(hashrates[-10:]) if len(hashrates) >= 10 else 0
             stddev_600s = statistics.stdev(hashrates[-20:]) if len(hashrates) >= 20 else 0
-            chart_data['std_devs'].append(stddev_60s)
             
             return MinerMetrics(
                 miner_name=miner.name,
@@ -143,16 +161,18 @@ class EnhancedBitAxeMonitor:
                 status='ONLINE',
                 hashrate_gh=hashrate_gh,
                 hashrate_th=hashrate_th,
-                expected_hashrate_gh=miner.expected_hashrate_gh,
-                expected_hashrate_th=miner.expected_hashrate_gh / 1000.0,
+                expected_hashrate_gh=expected_hashrate_gh,
+                expected_hashrate_th=expected_hashrate_th,
                 hashrate_efficiency_pct=efficiency_pct,
                 hashrate_stddev_60s=stddev_60s,
                 hashrate_stddev_300s=stddev_300s,
                 hashrate_stddev_600s=stddev_600s,
                 power_w=power_w,
+                efficiency_j_th=efficiency_j_th,
                 temperature_c=temperature_c,
-                frequency_mhz=float(raw_data.get('frequency', 0)),
-                voltage_v=float(raw_data.get('voltage', 0)),
+                frequency_mhz=frequency_mhz,
+                voltage_v=voltage_v,
+                set_voltage_v=set_voltage_v,
                 uptime_s=uptime_s,
                 fan_speed_rpm=int(raw_data.get('fanSpeed', 0)),
                 chip_temp_c=float(raw_data.get('chipTemp', temperature_c))
@@ -164,8 +184,8 @@ class EnhancedBitAxeMonitor:
                 miner_name=miner.name,
                 miner_ip=miner.ip,
                 status='PARSE_ERROR',
-                expected_hashrate_gh=miner.expected_hashrate_gh,
-                expected_hashrate_th=miner.expected_hashrate_gh / 1000.0
+                expected_hashrate_gh=miner.base_expected_hashrate_gh,
+                expected_hashrate_th=miner.base_expected_hashrate_gh / 1000.0
             )
 
     def collect_all_metrics(self) -> Dict:
@@ -186,8 +206,15 @@ class EnhancedBitAxeMonitor:
                 online_count += 1
         
         # Calculate fleet efficiency
-        total_expected_th = sum(miner.expected_hashrate_gh for miner in self.miners_config) / 1000.0
+        total_expected_th = sum([
+            self.calculate_expected_hashrate(
+                miners_data[i].get('frequency_mhz', 600) if miners_data[i]['status'] == 'ONLINE' else 600,
+                miner.base_expected_hashrate_gh
+            ) for i, miner in enumerate(self.miners_config)
+        ]) / 1000.0
+        
         fleet_efficiency = (total_hashrate_th / total_expected_th * 100) if total_expected_th > 0 else 0
+        fleet_j_th = (total_power_w / total_hashrate_th) if total_hashrate_th > 0 else 0
 
         # Convert all deques in chart_data to lists for JSON serialization
         serializable_chart_data = {}
@@ -201,6 +228,7 @@ class EnhancedBitAxeMonitor:
             'total_hashrate_th': total_hashrate_th,
             'total_power_w': total_power_w,
             'fleet_efficiency': fleet_efficiency,
+            'fleet_j_th': fleet_j_th,
             'online_count': online_count,
             'total_count': len(self.miners_config),
             'miners': miners_data,
@@ -232,14 +260,14 @@ class EnhancedBitAxeMonitor:
         
         # Clear screen and print header
         os.system('cls' if os.name == 'nt' else 'clear')
-        print("=" * 80)
+        print("=" * 90)
         if use_emojis:
-            print(f"🚀 Enhanced BitAxe Monitor - Console View".center(80))
-            print(f"📊 {timestamp}".center(80))
+            print(f"🚀 Enhanced BitAxe Monitor - Console View".center(90))
+            print(f"📊 {timestamp}".center(90))
         else:
-            print(f"Enhanced BitAxe Monitor - Console View".center(80))
-            print(f"{timestamp}".center(80))
-        print("=" * 80)
+            print(f"Enhanced BitAxe Monitor - Console View".center(90))
+            print(f"{timestamp}".center(90))
+        print("=" * 90)
         
         # Fleet summary
         if use_emojis:
@@ -247,8 +275,9 @@ class EnhancedBitAxeMonitor:
         else:
             print(f"\nFLEET SUMMARY")
         print(f"   Total Hashrate: {metrics_data['total_hashrate_th']:.3f} TH/s")
-        print(f"   Total Power:    {metrics_data['total_power_w']:.1f} W")
+        print(f"   Total Power:    {metrics_data['total_power_w']:.2f} W")
         print(f"   Fleet Efficiency: {metrics_data['fleet_efficiency']:.1f}%")
+        print(f"   Fleet J/TH:     {metrics_data['fleet_j_th']:.2f} J/TH")
         print(f"   Miners Online:  {metrics_data['online_count']}/{metrics_data['total_count']}")
         
         # Individual miners
@@ -256,9 +285,9 @@ class EnhancedBitAxeMonitor:
             print(f"\n⚒️  MINER DETAILS")
         else:
             print(f"\nMINER DETAILS")
-        print("-" * 80)
-        print(f"{'Name':<20} {'Status':<8} {'Hashrate':<12} {'Efficiency':<12} {'Power':<8} {'Temp':<8}")
-        print("-" * 80)
+        print("-" * 90)
+        print(f"{'Name':<18} {'Status':<8} {'Hashrate':<12} {'Efficiency':<11} {'J/TH':<8} {'Freq':<8} {'Volt':<8} {'Temp':<8}")
+        print("-" * 90)
         
         for miner in metrics_data['miners']:
             if use_emojis:
@@ -282,11 +311,17 @@ class EnhancedBitAxeMonitor:
                     else:
                         efficiency_color = "[LOW] "
             
-            print(f"{miner['miner_name']:<20} {status_icon} {miner['status']:<6} "
-                  f"{miner['hashrate_gh']:.1f} GH/s    "
-                  f"{efficiency_color}{miner['hashrate_efficiency_pct']:.1f}%       "
-                  f"{miner['power_w']:.1f} W   "
-                  f"{miner['temperature_c']:.1f}°C")
+            if miner['status'] == 'ONLINE':
+                print(f"{miner['miner_name']:<18} {status_icon} {miner['status']:<6} "
+                      f"{miner['hashrate_gh']:.1f} GH/s   "
+                      f"{efficiency_color}{miner['hashrate_efficiency_pct']:.1f}%      "
+                      f"{miner['efficiency_j_th']:.2f}   "
+                      f"{miner['frequency_mhz']:.0f}MHz  "
+                      f"{miner['voltage_v']:.3f}V "
+                      f"{miner['temperature_c']:.1f}°C")
+            else:
+                print(f"{miner['miner_name']:<18} {status_icon} {miner['status']:<6} "
+                      f"{'OFFLINE':<12} {'---':<11} {'---':<8} {'---':<8} {'---':<8} {'---':<8}")
         
         if use_emojis:
             print(f"\n🔄 Next update in 30 seconds... (Press Ctrl+C to stop)")
@@ -310,7 +345,7 @@ class EnhancedBitAxeMonitor:
 
     def dashboard(self):
         """Web dashboard route"""
-        return render_template_string(ENHANCED_HTML_TEMPLATE)
+        return render_template_string(BEAUTIFUL_HTML_TEMPLATE)
 
     def api_metrics(self):
         """API endpoint for metrics data"""
@@ -327,7 +362,7 @@ class EnhancedBitAxeMonitor:
             print(f"Starting Enhanced BitAxe Monitor - Console Mode")
             print(f"Monitoring {len(self.miners_config)} miners:")
             for miner in self.miners_config:
-                print(f"   - {miner.name} at {miner.ip} (expected: {miner.expected_hashrate_gh} GH/s)")
+                print(f"   - {miner.name} at {miner.ip} (base: {miner.base_expected_hashrate_gh} GH/s)")
             print(f"Web interface available at: http://localhost:{self.port}")
             print(f"30-second polling interval")
             print("\n" + "=" * 80)
@@ -354,7 +389,7 @@ class EnhancedBitAxeMonitor:
             logging.info(f"Starting Enhanced BitAxe Monitor on port {self.port}")
             logging.info(f"Monitoring {len(self.miners_config)} miners:")
             for miner in self.miners_config:
-                logging.info(f"  - {miner.name} at {miner.ip} (expected: {miner.expected_hashrate_gh} GH/s)")
+                logging.info(f"  - {miner.name} at {miner.ip} (base: {miner.base_expected_hashrate_gh} GH/s)")
             
             try:
                 self.app.run(host='0.0.0.0', port=self.port, debug=False)
@@ -363,116 +398,332 @@ class EnhancedBitAxeMonitor:
             except Exception as e:
                 logging.error(f"Monitor error: {e}")
 
-# Enhanced HTML Template with beautiful charts
-ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
+# Beautiful HTML Template with professional design
+BEAUTIFUL_HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced BitAxe Monitor</title>
+    <title>BitAxe Monitor - Professional Dashboard</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary-blue: #1e40af;
+            --primary-blue-light: #3b82f6;
+            --secondary-purple: #7c3aed;
+            --accent-green: #059669;
+            --accent-orange: #ea580c;
+            --accent-red: #dc2626;
+            --dark-bg: #0f172a;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --text-muted: #64748b;
+        }
+        
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box; 
+        }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            min-height: 100vh; color: #333;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--dark-bg) 0%, #1e293b 100%);
+            min-height: 100vh; 
+            color: var(--text-primary);
+            line-height: 1.6;
         }
         
         .header {
-            background: rgba(255, 255, 255, 0.95); padding: 2rem 0; text-align: center;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15); margin-bottom: 2rem;
-            backdrop-filter: blur(10px);
+            background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-purple) 100%);
+            padding: 2rem 0; 
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 30% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
+            pointer-events: none;
         }
         
         .header h1 { 
-            color: #2d3748; font-size: 2.8rem; font-weight: 600; margin-bottom: 0.5rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            font-size: 3rem; 
+            font-weight: 700; 
+            margin-bottom: 0.5rem;
+            position: relative;
+            z-index: 1;
         }
-        .header .subtitle { color: #4a5568; font-size: 1.3rem; font-weight: 500; }
-        .container { max-width: 1600px; margin: 0 auto; padding: 0 1rem; }
+        
+        .header .subtitle { 
+            font-size: 1.2rem; 
+            opacity: 0.9; 
+            font-weight: 500;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .container { 
+            max-width: 1800px; 
+            margin: 0 auto; 
+            padding: 2rem 1rem; 
+        }
         
         .stats-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1.5rem; margin-bottom: 2rem;
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem; 
+            margin-bottom: 3rem;
         }
         
         .stat-card {
-            background: rgba(255, 255, 255, 0.95); padding: 2rem; border-radius: 16px;
-            text-align: center; box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            backdrop-filter: blur(10px);
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            padding: 2rem; 
+            border-radius: 16px;
+            text-align: center; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary-blue-light) 0%, var(--secondary-purple) 100%);
         }
         
         .stat-card:hover { 
-            transform: translateY(-5px); 
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border-color: var(--primary-blue-light);
         }
-        .stat-label { display: block; color: #718096; font-size: 1rem; margin-bottom: 0.8rem; font-weight: 500; }
-        .stat-value { font-size: 2.2rem; font-weight: 700; color: #2d3748; }
         
-        .miners-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(900px, 1fr)); gap: 2rem; }
+        .stat-label { 
+            display: block; 
+            color: var(--text-secondary); 
+            font-size: 0.95rem; 
+            margin-bottom: 1rem; 
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value { 
+            font-size: 2.5rem; 
+            font-weight: 700; 
+            color: var(--text-primary);
+            line-height: 1;
+        }
+        
+        .miners-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(1000px, 1fr)); 
+            gap: 2rem; 
+        }
         
         .miner-card {
-            background: rgba(255, 255, 255, 0.98); border-radius: 20px; overflow: hidden;
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15); transition: all 0.3s ease;
-            backdrop-filter: blur(15px);
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 20px; 
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2); 
+            transition: all 0.3s ease;
         }
         
-        .miner-card:hover { transform: translateY(-8px); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2); }
+        .miner-card:hover { 
+            transform: translateY(-6px); 
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+            border-color: var(--primary-blue-light);
+        }
         
         .miner-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white; padding: 2rem; display: flex; justify-content: space-between; align-items: center;
+            background: linear-gradient(135deg, var(--primary-blue) 0%, var(--secondary-purple) 100%);
+            color: white; 
+            padding: 2rem; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            position: relative;
         }
         
-        .miner-name { font-size: 1.6rem; font-weight: 700; }
-        .status { padding: 0.6rem 1.5rem; border-radius: 25px; font-size: 1rem; font-weight: 600; }
-        .status-online { background: rgba(72, 187, 120, 0.2); color: #2f855a; }
-        .status-offline { background: rgba(245, 101, 101, 0.2); color: #c53030; }
+        .miner-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        
+        .miner-name { 
+            font-size: 1.8rem; 
+            font-weight: 700;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .status { 
+            padding: 0.8rem 1.5rem; 
+            border-radius: 25px; 
+            font-size: 1rem; 
+            font-weight: 600;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .status-online { 
+            background: rgba(5, 150, 105, 0.2); 
+            color: #10b981; 
+            border: 1px solid #10b981;
+        }
+        
+        .status-offline { 
+            background: rgba(220, 38, 38, 0.2); 
+            color: #ef4444; 
+            border: 1px solid #ef4444;
+        }
         
         .metrics-section {
-            padding: 2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 1.5rem; border-bottom: 1px solid #e2e8f0;
+            padding: 2rem; 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 2rem; 
+            border-bottom: 1px solid var(--card-border);
+            background: rgba(15, 23, 42, 0.3);
         }
         
-        .metric { text-align: center; }
-        .metric-label { display: block; color: #718096; font-size: 0.9rem; margin-bottom: 0.6rem; font-weight: 500; }
-        .metric-value { font-size: 1.5rem; font-weight: 700; color: #2d3748; }
+        .metric { 
+            text-align: center;
+            padding: 1rem;
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--card-border);
+            transition: all 0.3s ease;
+        }
         
-        .efficiency-excellent { color: #38a169; }
-        .efficiency-good { color: #d69e2e; }
-        .efficiency-poor { color: #e53e3e; }
+        .metric:hover {
+            border-color: var(--primary-blue-light);
+            transform: translateY(-2px);
+        }
         
-        .charts-section { padding: 2rem; }
-        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        .metric-label { 
+            display: block; 
+            color: var(--text-secondary); 
+            font-size: 0.85rem; 
+            margin-bottom: 0.8rem; 
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .metric-value { 
+            font-size: 1.5rem; 
+            font-weight: 700; 
+            color: var(--text-primary);
+        }
+        
+        .efficiency-excellent { color: var(--accent-green); }
+        .efficiency-good { color: var(--accent-orange); }
+        .efficiency-poor { color: var(--accent-red); }
+        
+        .charts-section { 
+            padding: 2rem; 
+            background: rgba(15, 23, 42, 0.2);
+        }
+        
+        .charts-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 2rem; 
+        }
+        
         .chart-container { 
-            background: linear-gradient(135deg, #f8fafc 0%, #edf2f7 100%); 
-            border-radius: 16px; padding: 1.5rem; height: 300px;
-            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.06);
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px; 
+            padding: 1.5rem; 
+            height: 320px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
         }
+        
+        .chart-container:hover {
+            border-color: var(--primary-blue-light);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+        
         .chart-title { 
-            font-size: 1.1rem; color: #4a5568; margin-bottom: 1rem; text-align: center; 
+            font-size: 1.2rem; 
+            color: var(--text-primary); 
+            margin-bottom: 1rem; 
+            text-align: center; 
             font-weight: 600;
         }
         
         .update-time { 
-            text-align: center; color: rgba(255, 255, 255, 0.8); margin-top: 2rem; 
-            font-size: 1rem; font-weight: 500;
+            text-align: center; 
+            color: var(--text-muted); 
+            margin-top: 3rem; 
+            font-size: 1rem; 
+            font-weight: 500;
+            padding: 1rem;
+            background: var(--card-bg);
+            border-radius: 8px;
+            border: 1px solid var(--card-border);
         }
         
         @media (max-width: 1200px) {
             .charts-grid { grid-template-columns: 1fr; }
             .miners-grid { grid-template-columns: 1fr; }
+            .header h1 { font-size: 2.5rem; }
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 1rem; }
+            .metrics-section { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--dark-bg);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary-blue);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-blue-light);
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Enhanced BitAxe Monitor</h1>
-        <div class="subtitle">Real-time Mining Performance • 60-Minute Analytics • 30s Refresh</div>
+        <h1>BitAxe Monitor</h1>
+        <div class="subtitle">Professional Mining Dashboard • Real-time Analytics • 30s Refresh</div>
     </div>
     
     <div class="container">
@@ -495,77 +746,115 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
             const chartConfigs = [
                 { 
                     id: `hashrate-chart-${minerIdSafe}`, 
-                    title: 'Hashrate (GH/s)', 
-                    borderColor: 'rgb(102, 126, 234)',
-                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                    dataKey: 'hashrates' 
-                },
-                { 
-                    id: `variance-chart-${minerIdSafe}`, 
-                    title: 'Directional Variance', 
-                    borderColor: 'rgb(239, 68, 68)',
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    dataKey: 'variances' 
+                    title: '⚡ Hashrate Performance', 
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    dataKey: 'hashrates',
+                    referenceLine: true,
+                    referenceDataKey: 'expected_hashrates'
                 },
                 { 
                     id: `efficiency-chart-${minerIdSafe}`, 
-                    title: 'Efficiency (%)', 
-                    borderColor: 'rgb(16, 185, 129)',
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                    dataKey: 'efficiencies' 
+                    title: '📊 Mining Efficiency', 
+                    borderColor: '#059669',
+                    backgroundColor: 'rgba(5, 150, 105, 0.1)',
+                    dataKey: 'efficiencies',
+                    referenceLine: true,
+                    referenceValue: 100
                 },
                 { 
-                    id: `power-chart-${minerIdSafe}`, 
-                    title: 'Power & Temperature', 
-                    borderColor: 'rgb(245, 158, 11)',
-                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                    dataKey: 'power' 
+                    id: `jth-chart-${minerIdSafe}`, 
+                    title: '🔥 J/TH Efficiency', 
+                    borderColor: '#ea580c',
+                    backgroundColor: 'rgba(234, 88, 12, 0.1)',
+                    dataKey: 'j_th_efficiencies'
+                },
+                { 
+                    id: `voltage-chart-${minerIdSafe}`, 
+                    title: '⚡ Voltage & Temperature', 
+                    borderColor: '#7c3aed',
+                    backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                    dataKey: 'voltages',
+                    referenceLine: true,
+                    referenceValue: 1.000
                 }
             ];
 
             chartConfigs.forEach(config => {
                 const ctx = document.getElementById(config.id);
                 if (ctx) {
+                    const datasets = [{
+                        label: config.title, 
+                        data: [], 
+                        borderColor: config.borderColor,
+                        backgroundColor: config.backgroundColor, 
+                        tension: 0.4, 
+                        fill: true,
+                        borderWidth: 3,
+                        pointRadius: 4,
+                        pointBackgroundColor: config.borderColor,
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 2
+                    }];
+
+                    // Add reference line dataset if needed
+                    if (config.referenceLine) {
+                        datasets.push({
+                            label: 'Reference',
+                            data: [],
+                            borderColor: '#64748b',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0
+                        });
+                    }
+
                     charts[config.id] = new Chart(ctx, {
                         type: 'line',
                         data: {
                             labels: [],
-                            datasets: [{
-                                label: config.title, 
-                                data: [], 
-                                borderColor: config.borderColor,
-                                backgroundColor: config.backgroundColor, 
-                                tension: 0.4, 
-                                fill: true,
-                                borderWidth: 3,
-                                pointRadius: 4,
-                                pointBackgroundColor: config.borderColor,
-                                pointBorderColor: '#ffffff',
-                                pointBorderWidth: 2
-                            }]
+                            datasets: datasets
                         },
                         options: {
                             responsive: true, 
                             maintainAspectRatio: false,
                             plugins: { 
-                                legend: { display: false },
+                                legend: { 
+                                    display: false 
+                                },
                                 tooltip: {
-                                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                    titleColor: '#fff',
-                                    bodyColor: '#fff',
+                                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                                    titleColor: '#f8fafc',
+                                    bodyColor: '#cbd5e1',
                                     borderColor: config.borderColor,
-                                    borderWidth: 1
+                                    borderWidth: 1,
+                                    cornerRadius: 8
                                 }
                             },
                             scales: { 
                                 x: {
-                                    grid: { color: 'rgba(0, 0, 0, 0.1)' },
-                                    ticks: { color: '#6b7280' }
+                                    grid: { 
+                                        color: 'rgba(100, 116, 139, 0.2)',
+                                        drawBorder: false
+                                    },
+                                    ticks: { 
+                                        color: '#64748b',
+                                        font: { size: 11 }
+                                    }
                                 },
                                 y: { 
-                                    beginAtZero: config.dataKey === 'variances' ? false : true,
-                                    grid: { color: 'rgba(0, 0, 0, 0.1)' },
-                                    ticks: { color: '#6b7280' }
+                                    beginAtZero: false,
+                                    grid: { 
+                                        color: 'rgba(100, 116, 139, 0.2)',
+                                        drawBorder: false
+                                    },
+                                    ticks: { 
+                                        color: '#64748b',
+                                        font: { size: 11 }
+                                    }
                                 }
                             },
                             elements: {
@@ -585,10 +874,10 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
             if (!minerChartData) return;
 
             const chartConfigs = [
-                { id: `hashrate-chart-${minerIdSafe}`, dataKey: 'hashrates' },
-                { id: `variance-chart-${minerIdSafe}`, dataKey: 'variances' },
-                { id: `efficiency-chart-${minerIdSafe}`, dataKey: 'efficiencies' },
-                { id: `power-chart-${minerIdSafe}`, dataKey: 'power' }
+                { id: `hashrate-chart-${minerIdSafe}`, dataKey: 'hashrates', referenceDataKey: 'expected_hashrates' },
+                { id: `efficiency-chart-${minerIdSafe}`, dataKey: 'efficiencies', referenceValue: 100 },
+                { id: `jth-chart-${minerIdSafe}`, dataKey: 'j_th_efficiencies' },
+                { id: `voltage-chart-${minerIdSafe}`, dataKey: 'voltages', referenceValue: 1.000 }
             ];
 
             chartConfigs.forEach(config => {
@@ -596,6 +885,17 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
                 if (chart && minerChartData[config.dataKey]) {
                     chart.data.labels = Array.from(minerChartData.timestamps);
                     chart.data.datasets[0].data = Array.from(minerChartData[config.dataKey]);
+                    
+                    // Update reference line if exists
+                    if (chart.data.datasets.length > 1) {
+                        if (config.referenceDataKey && minerChartData[config.referenceDataKey]) {
+                            chart.data.datasets[1].data = Array.from(minerChartData[config.referenceDataKey]);
+                        } else if (config.referenceValue !== undefined) {
+                            const referenceArray = new Array(minerChartData.timestamps.length).fill(config.referenceValue);
+                            chart.data.datasets[1].data = referenceArray;
+                        }
+                    }
+                    
                     chart.update('none');
                 }
             });
@@ -619,20 +919,20 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
                         <div class="charts-section">
                             <div class="charts-grid">
                                 <div class="chart-container">
-                                    <div class="chart-title">📈 Hashrate (GH/s)</div>
+                                    <div class="chart-title">⚡ Hashrate Performance</div>
                                     <canvas id="hashrate-chart-${minerIdSafe}"></canvas>
                                 </div>
                                 <div class="chart-container">
-                                    <div class="chart-title">📊 Directional Variance</div>
-                                    <canvas id="variance-chart-${minerIdSafe}"></canvas>
-                                </div>
-                                <div class="chart-container">
-                                    <div class="chart-title">⚡ Efficiency (%)</div>
+                                    <div class="chart-title">📊 Mining Efficiency</div>
                                     <canvas id="efficiency-chart-${minerIdSafe}"></canvas>
                                 </div>
                                 <div class="chart-container">
-                                    <div class="chart-title">🔥 Power & Temperature</div>
-                                    <canvas id="power-chart-${minerIdSafe}"></canvas>
+                                    <div class="chart-title">🔥 J/TH Efficiency</div>
+                                    <canvas id="jth-chart-${minerIdSafe}"></canvas>
+                                </div>
+                                <div class="chart-container">
+                                    <div class="chart-title">⚡ Voltage & Temperature</div>
+                                    <canvas id="voltage-chart-${minerIdSafe}"></canvas>
                                 </div>
                             </div>
                         </div>
@@ -651,6 +951,10 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
                             <div class="metric">
                                 <span class="metric-label">IP Address</span>
                                 <span class="metric-value">${miner.miner_ip}</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Status</span>
+                                <span class="metric-value">OFFLINE</span>
                             </div>
                         </div>
                     `;
@@ -673,24 +977,40 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
             if (metricsElem && miner.status === 'ONLINE') {
                 metricsElem.innerHTML = `
                     <div class="metric">
-                        <span class="metric-label">IP Address</span>
-                        <span class="metric-value">${miner.miner_ip}</span>
-                    </div>
-                    <div class="metric">
                         <span class="metric-label">Hashrate</span>
                         <span class="metric-value">${miner.hashrate_gh.toFixed(1)} GH/s</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Expected</span>
+                        <span class="metric-value">${miner.expected_hashrate_gh.toFixed(1)} GH/s</span>
                     </div>
                     <div class="metric">
                         <span class="metric-label">Efficiency</span>
                         <span class="metric-value ${getEfficiencyClass(miner.hashrate_efficiency_pct)}">${miner.hashrate_efficiency_pct.toFixed(1)}%</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Power</span>
-                        <span class="metric-value">${miner.power_w} W</span>
+                        <span class="metric-label">J/TH</span>
+                        <span class="metric-value">${miner.efficiency_j_th.toFixed(2)}</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Temp</span>
-                        <span class="metric-value">${miner.temperature_c}°C</span>
+                        <span class="metric-label">Power</span>
+                        <span class="metric-value">${miner.power_w.toFixed(2)}W</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Frequency</span>
+                        <span class="metric-value">${miner.frequency_mhz.toFixed(0)} MHz</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Set Voltage</span>
+                        <span class="metric-value">${miner.set_voltage_v.toFixed(3)}V</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Measured Voltage</span>
+                        <span class="metric-value">${miner.voltage_v.toFixed(3)}V</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Temperature</span>
+                        <span class="metric-value">${miner.temperature_c.toFixed(2)}°C</span>
                     </div>
                     <div class="metric">
                         <span class="metric-label">Uptime</span>
@@ -707,7 +1027,7 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('updateTime').textContent = 
-                        `Last updated: ${new Date().toLocaleTimeString()} • Next update in 30s`;
+                        `🔄 Last updated: ${new Date().toLocaleTimeString()} • Next update in 30s`;
                     
                     // Update fleet stats
                     document.getElementById('statsGrid').innerHTML = `
@@ -717,11 +1037,15 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Total Power</div>
-                            <div class="stat-value">${data.total_power_w.toFixed(1)} W</div>
+                            <div class="stat-value">${data.total_power_w.toFixed(2)} W</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Fleet Efficiency</div>
                             <div class="stat-value ${getEfficiencyClass(data.fleet_efficiency)}">${data.fleet_efficiency.toFixed(1)}%</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Fleet J/TH</div>
+                            <div class="stat-value">${data.fleet_j_th.toFixed(2)}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Miners Online</div>
@@ -739,7 +1063,7 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
                 })
                 .catch(error => {
                     console.error('Error fetching data:', error);
-                    document.getElementById('updateTime').textContent = 'Error: ' + error.message;
+                    document.getElementById('updateTime').textContent = '❌ Error: ' + error.message;
                 });
         }
         
@@ -762,9 +1086,9 @@ def main():
     
     # =================== EDIT YOUR CONFIGURATION HERE ===================
     miners_config = [
-        {'name': 'BitAxe-Gamma-1', 'ip': '192.168.1.45', 'expected_hashrate_gh': 1200},
-        {'name': 'BitAxe-Gamma-2', 'ip': '192.168.1.46', 'expected_hashrate_gh': 1150},
-        {'name': 'BitAxe-Gamma-3', 'ip': '192.168.1.47', 'expected_hashrate_gh': 1100}
+        {'name': 'BitAxe-Gamma-1', 'ip': '192.168.1.45', 'base_expected_hashrate_gh': 1200},
+        {'name': 'BitAxe-Gamma-2', 'ip': '192.168.1.46', 'base_expected_hashrate_gh': 1150},
+        {'name': 'BitAxe-Gamma-3', 'ip': '192.168.1.47', 'base_expected_hashrate_gh': 1100}
     ]
     # =====================================================================
     
