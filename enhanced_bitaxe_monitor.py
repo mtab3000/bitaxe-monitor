@@ -83,7 +83,7 @@ class BitAxeAPI:
 class VarianceTracker:
     """Tracks variance data for multiple time windows"""
     
-    def __init__(self, maxlen=600):  # 10 minutes of data at 1-second intervals
+    def __init__(self, maxlen=20):  # 10 minutes of data at 30-second intervals (20 * 30s = 600s)
         self.data = deque(maxlen=maxlen)
         self.timestamps = deque(maxlen=maxlen)
     
@@ -164,10 +164,10 @@ class EnhancedBitAxeMonitor:
         tracker = self.variance_trackers[miner.name]
         tracker.add_data_point(hashrate_gh)
         
-        # Calculate variance for different time windows
-        stddev_60s = tracker.get_variance_stats(60)
-        stddev_300s = tracker.get_variance_stats(300)
-        stddev_600s = tracker.get_variance_stats(600)
+        # Calculate variance for different time windows (adjusted for 30s polling)
+        stddev_60s = tracker.get_variance_stats(120)   # 2 minutes
+        stddev_300s = tracker.get_variance_stats(300)  # 5 minutes  
+        stddev_600s = tracker.get_variance_stats(600)  # 10 minutes
         
         return MinerMetrics(
             miner_name=miner.name,
@@ -255,7 +255,7 @@ class EnhancedBitAxeMonitor:
             print(f"  - {miner.name} ({miner.ip}) - Expected: {miner.expected_hashrate_gh} GH/s")
         print()
         print(f"Web interface: http://localhost:{self.port}")
-        print("Charts update every 5 seconds with live data")
+        print("Charts update every 30 seconds with live data")
         print("All enhanced variance features working")
         print()
         print("Press Ctrl+C to stop")
@@ -307,11 +307,11 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
         <div class="update-time" id="updateTime">Loading...</div>
         <div class="stats-grid" id="statsGrid"></div>
         <div class="miners-grid" id="minersGrid"></div>
-        <div class="footer">Auto-refreshes every 5 seconds | Enhanced variance monitoring active</div>
+        <div class="footer">Auto-refreshes every 30 seconds | Enhanced variance monitoring active</div>
     </div>
 
     <script>
-        const charts = {}; const chartData = {}; const maxDataPoints = 15;
+        const charts = {}; const chartData = {}; const maxDataPoints = 20;
         
         function getEfficiencyClass(percentage) {
             if (percentage >= 95) return 'efficiency-high';
@@ -468,9 +468,9 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
                 if (varianceElement) {
                     varianceElement.innerHTML = 
                         '<div class="variance-title">Enhanced Variance Tracking</div>' +
-                        '<div class="variance-row"><span>Std Dev (60s):</span><span>' + (miner.hashrate_stddev_60s ? miner.hashrate_stddev_60s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
-                        '<div class="variance-row"><span>Std Dev (300s):</span><span>' + (miner.hashrate_stddev_300s ? miner.hashrate_stddev_300s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
-                        '<div class="variance-row"><span>Std Dev (600s):</span><span>' + (miner.hashrate_stddev_600s ? miner.hashrate_stddev_600s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
+                        '<div class="variance-row"><span>Std Dev (2 min):</span><span>' + (miner.hashrate_stddev_60s ? miner.hashrate_stddev_60s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
+                        '<div class="variance-row"><span>Std Dev (5 min):</span><span>' + (miner.hashrate_stddev_300s ? miner.hashrate_stddev_300s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
+                        '<div class="variance-row"><span>Std Dev (10 min):</span><span>' + (miner.hashrate_stddev_600s ? miner.hashrate_stddev_600s.toFixed(1) + ' GH/s' : 'Calculating...') + '</span></div>' +
                         '<div class="variance-row"><span>Expected Baseline:</span><span>' + miner.expected_hashrate_gh.toFixed(0) + ' GH/s</span></div>';
                 }
                 
@@ -509,7 +509,7 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
             });
         }
         
-        updateData(); setInterval(updateData, 5000);
+        updateData(); setInterval(updateData, 30000);
     </script>
 </body></html>'''
 
