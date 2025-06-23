@@ -118,11 +118,22 @@ HTML_DEBUG = '''
 
 @app.route('/')
 def index():
+    """
+    Serve the main debug web interface for monitoring mining devices.
+    
+    Returns:
+        str: Rendered HTML page containing the Bitaxe Monitor debug interface.
+    """
     return render_template_string(HTML_DEBUG)
 
 @app.route('/api/metrics')
 def api_metrics():
     # Generate demo data
+    """
+    Return simulated mining device metrics as a JSON response for debugging and demonstration purposes.
+    
+    The response includes randomized data for three miners, such as hashrate, power, temperature, and status, along with aggregate totals and a timestamp.
+    """
     miners = []
     for i in range(1, 4):
         base_hashrate = [1200, 1150, 1100][i-1]

@@ -464,6 +464,9 @@ PERSISTENT_CHARTS_HTML = '''
 
 class FixedDemo:
     def __init__(self):
+        """
+        Initialize the FixedDemo web application, setting up the Flask app, mining baseline hashrates, server start time, and historical data buffers for variance tracking.
+        """
         self.app = Flask(__name__)
         self.setup_routes()
         self.base_hashrates = {'Demo-Gamma-1': 1200, 'Demo-Gamma-2': 1150, 'Demo-Gamma-3': 1100}
@@ -471,12 +474,22 @@ class FixedDemo:
         self.history = {name: deque(maxlen=60) for name in self.base_hashrates.keys()}
     
     def setup_routes(self):
+        """
+        Defines the Flask routes for the mining monitor web application.
+        
+        The root route ('/') serves the main dashboard HTML page with embedded JavaScript and CSS for real-time monitoring. The '/api/metrics' route returns a JSON response containing simulated mining metrics for each miner, including current hashrate, efficiency, power, temperature, frequency, uptime, and variance statistics over multiple time windows. The metrics endpoint also provides fleet-wide totals and efficiency calculations.
+        """
         @self.app.route('/')
         def index():
             return render_template_string(PERSISTENT_CHARTS_HTML)
         
         @self.app.route('/api/metrics')
         def api_metrics():
+            """
+            Generate and return simulated mining metrics for all miners as a JSON response.
+            
+            The response includes per-miner statistics such as current hashrate, expected hashrate, efficiency, power, temperature, frequency, uptime, and standard deviation of hashrate over 60s, 300s, and 600s windows. Fleet-wide totals and efficiency are also provided.
+            """
             miners = []
             total_hashrate = 0
             total_power = 0
@@ -545,6 +558,9 @@ class FixedDemo:
             return jsonify(response)
     
     def run(self):
+        """
+        Starts the Flask web server for the mining monitor dashboard and prints startup information about available features and access details.
+        """
         print("=" * 80)
         print("FIXED ENHANCED VARIANCE MONITOR - CHARTS NEVER DISAPPEAR")
         print("=" * 80)
