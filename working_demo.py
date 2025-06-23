@@ -558,6 +558,9 @@ WORKING_HTML = '''
 # Demo data generation
 class WorkingDemo:
     def __init__(self):
+        """
+        Initialize the WorkingDemo application with Flask, baseline miner hashrates, start time, and history buffers for variance tracking.
+        """
         self.app = Flask(__name__)
         self.setup_routes()
         self.base_hashrates = {'Demo-Gamma-1': 1200, 'Demo-Gamma-2': 1150, 'Demo-Gamma-3': 1100}
@@ -565,6 +568,11 @@ class WorkingDemo:
         self.history = {name: deque(maxlen=60) for name in self.base_hashrates.keys()}
     
     def setup_routes(self):
+        """
+        Defines the Flask routes for the web interface and metrics API.
+        
+        The root route ('/') serves the main HTML page for the mining monitor interface. The '/api/metrics' route generates and returns simulated mining metrics as JSON, including per-miner statistics (hashrate, power, temperature, uptime, and variance calculations) and fleet-wide aggregates.
+        """
         @self.app.route('/')
         def index():
             return render_template_string(WORKING_HTML)
@@ -572,6 +580,11 @@ class WorkingDemo:
         @self.app.route('/api/metrics')
         def api_metrics():
             # Generate realistic demo data
+            """
+            Simulate and return current mining fleet metrics and variance statistics as a JSON response.
+            
+            Generates realistic, time-varying performance data for each miner, including hashrate with variance, power, temperature, frequency, uptime, and standard deviation of hashrate over 60s, 300s, and 600s intervals. Aggregates fleet-wide totals and efficiency, and returns all data in a structured JSON format suitable for real-time monitoring dashboards.
+            """
             miners = []
             total_hashrate = 0
             total_power = 0
@@ -639,6 +652,9 @@ class WorkingDemo:
             return jsonify(response)
     
     def run(self):
+        """
+        Starts the Flask web server for the Bitaxe Monitor demo and prints startup instructions and feature highlights to the console.
+        """
         print("=" * 80)
         print("WORKING BITAXE MONITOR - ENHANCED VARIANCE TRACKING WITH CHARTS")
         print("=" * 80)

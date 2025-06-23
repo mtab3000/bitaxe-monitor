@@ -62,10 +62,26 @@ class BitAxeAPI:
     """API client for communicating with BitAxe miners"""
     
     def __init__(self, timeout=5):
+        """
+        Initialize the BitAxeAPI client with a specified HTTP request timeout.
+        
+        Parameters:
+            timeout (int, optional): Timeout in seconds for HTTP requests to miners. Defaults to 5.
+        """
         self.timeout = timeout
     
     def get_system_info(self, miner_config: MinerConfig) -> Optional[Dict]:
-        """Get system info from a BitAxe miner"""
+        """
+        Retrieve system information from a BitAxe miner via its HTTP API.
+        
+        Attempts to connect to the specified miner and fetch system metrics. Returns parsed JSON data if successful, or None if the miner is unreachable or returns a non-200 status code.
+        
+        Parameters:
+            miner_config (MinerConfig): Configuration for the target BitAxe miner.
+        
+        Returns:
+            dict or None: Parsed system information if successful, otherwise None.
+        """
         try:
             url = f"http://{miner_config.ip}/api/system/info"
             response = requests.get(url, timeout=self.timeout)
@@ -84,16 +100,32 @@ class VarianceTracker:
     """Tracks variance data for multiple time windows"""
     
     def __init__(self, maxlen=600):  # 10 minutes of data at 1-second intervals
+        """
+        Initialize a VarianceTracker to store timestamped hashrate data points for variance calculations.
+        
+        Parameters:
+            maxlen (int): Maximum number of data points to retain, corresponding to the time window in seconds.
+        """
         self.data = deque(maxlen=maxlen)
         self.timestamps = deque(maxlen=maxlen)
     
     def add_data_point(self, value: float):
-        """Add a new data point"""
+        """
+        Appends a new hashrate data point and its timestamp to the tracker.
+        """
         self.data.append(value)
         self.timestamps.append(datetime.now())
     
     def get_variance_stats(self, window_seconds: int) -> Optional[float]:
-        """Get standard deviation for a specific time window"""
+        """
+        Calculate the standard deviation of data points within the specified time window.
+        
+        Parameters:
+            window_seconds (int): The length of the time window in seconds to consider for variance calculation.
+        
+        Returns:
+            Optional[float]: The standard deviation of data points within the window, or None if fewer than two data points are available.
+        """
         if len(self.data) < 2:
             return None
         
@@ -114,6 +146,11 @@ class EnhancedBitAxeMonitor:
     """Enhanced BitAxe monitor with variance tracking and charts"""
     
     def __init__(self, miners_config: List[Dict], port=8080):
+        """
+        Initialize the EnhancedBitAxeMonitor with miner configurations and set up the web server.
+        
+        Creates MinerConfig instances for each miner, initializes variance trackers, and prepares Flask routes for the monitoring dashboard.
+        """
         self.app = Flask(__name__)
         self.miners = [MinerConfig(**config) for config in miners_config]
         self.api = BitAxeAPI()
@@ -125,18 +162,39 @@ class EnhancedBitAxeMonitor:
         self.setup_routes()
     
     def setup_routes(self):
-        """Setup Flask routes"""
+        """
+        Defines Flask routes for serving the main dashboard page and the API endpoint providing miner metrics in JSON format.
+        """
         
         @self.app.route('/')
         def index():
+            """
+            Serves the main web dashboard page for the BitAxe miner monitor.
+            
+            Returns:
+                Rendered HTML page with embedded JavaScript and charts for real-time miner monitoring.
+            """
             return render_template_string(ENHANCED_HTML_TEMPLATE)
         
         @self.app.route('/api/metrics')
         def api_metrics():
+            """
+            Handles the '/api/metrics' route and returns JSON-formatted metrics for all monitored miners.
+            """
             return jsonify(self.get_all_metrics())
     
     def get_miner_metrics(self, miner: MinerConfig) -> MinerMetrics:
-        """Get metrics for a single miner"""
+        """
+        Retrieve and compute real-time metrics for a single BitAxe miner.
+        
+        If the miner is offline or unreachable, returns metrics with status 'OFFLINE'. If online, gathers system information, calculates efficiency against expected hashrate, updates variance tracking, and computes standard deviations over 60s, 300s, and 600s intervals.
+        
+        Parameters:
+            miner (MinerConfig): The configuration for the miner to query.
+        
+        Returns:
+            MinerMetrics: The current metrics and variance statistics for the specified miner.
+        """
         
         # Get data from BitAxe API
         system_info = self.api.get_system_info(miner)
@@ -188,7 +246,12 @@ class EnhancedBitAxeMonitor:
         )
     
     def get_all_metrics(self) -> Dict:
-        """Get metrics for all miners"""
+        """
+        Collects and aggregates metrics for all configured miners, including fleet-wide statistics.
+        
+        Returns:
+            dict: A dictionary containing the current timestamp, total hashrate (TH/s), total power consumption (W), fleet efficiency percentage, number of online miners, total miner count, and a list of per-miner metrics.
+        """
         
         miners_data = []
         total_hashrate_th = 0
@@ -239,7 +302,9 @@ class EnhancedBitAxeMonitor:
         }
     
     def run(self):
-        """Run the enhanced monitor"""
+        """
+        Starts the enhanced BitAxe monitor, displaying startup information and launching the Flask web server for real-time miner monitoring on the specified port.
+        """
         print("=" * 80)
         print("ENHANCED BITAXE MONITOR - WITH WORKING CHARTS")
         print("=" * 80)
@@ -459,7 +524,11 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
 </body></html>'''
 
 def main():
-    """Main function to run the enhanced BitAxe monitor"""
+    """
+    Configures miner settings and starts the enhanced BitAxe monitoring web server.
+    
+    Edit the `miners_config` list to specify your miners' names, IP addresses, and expected hashrates before running. Initializes logging, creates the monitor instance, and launches the Flask-based dashboard on port 8080.
+    """
     
     # =================== EDIT YOUR CONFIGURATION HERE ===================
     # Replace these with your actual BitAxe miner IPs and expected hashrates

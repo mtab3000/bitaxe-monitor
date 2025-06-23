@@ -418,6 +418,9 @@ COMPLETE_HTML = '''
 
 class CompleteDemo:
     def __init__(self):
+        """
+        Initialize the CompleteDemo web application, set up Flask routes, define base hashrates for demo miners, record the application start time, and prepare history buffers for variance calculations.
+        """
         self.app = Flask(__name__)
         self.setup_routes()
         self.base_hashrates = {'Demo-Gamma-1': 1200, 'Demo-Gamma-2': 1150, 'Demo-Gamma-3': 1100}
@@ -425,12 +428,22 @@ class CompleteDemo:
         self.history = {name: deque(maxlen=60) for name in self.base_hashrates.keys()}
     
     def setup_routes(self):
+        """
+        Register the Flask routes for the web interface and API endpoints.
+        
+        Defines the root route `'/'` to serve the main HTML page and the `'/api/metrics'` route to provide simulated miner metrics as JSON, including real-time hashrate, power, temperature, efficiency, and multi-window variance statistics for each miner.
+        """
         @self.app.route('/')
         def index():
             return render_template_string(COMPLETE_HTML)
         
         @self.app.route('/api/metrics')
         def api_metrics():
+            """
+            Generate and return simulated mining fleet metrics, including per-miner statistics and aggregated fleet data, as a JSON response.
+            
+            The response includes real-time hashrate, power, efficiency, temperature, frequency, uptime, and multi-window hashrate variance metrics for each miner, as well as fleet-wide totals and efficiency.
+            """
             miners = []
             total_hashrate = 0
             total_power = 0
@@ -498,6 +511,9 @@ class CompleteDemo:
             return jsonify(response)
     
     def run(self):
+        """
+        Starts the enhanced variance monitor web application and serves the real-time monitoring interface on port 8080.
+        """
         print("=" * 80)
         print("COMPLETE ENHANCED VARIANCE MONITOR WITH CHARTS")
         print("=" * 80)

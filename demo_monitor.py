@@ -27,6 +27,9 @@ class DemoMinerAPI:
     """Demo API that simulates bitaxe responses"""
     
     def __init__(self):
+        """
+        Initialize the DemoMinerAPI with base hashrates for simulated miners and record the start time.
+        """
         self.base_hashrates = {
             'Demo-Gamma-1': 1200,
             'Demo-Gamma-2': 1150, 
@@ -35,7 +38,17 @@ class DemoMinerAPI:
         self.start_time = datetime.now()
     
     def get_system_info(self, miner_config, timeout=5):
-        """Return simulated miner data"""
+        """
+        Generate and return a dictionary of simulated miner metrics for a given miner configuration.
+        
+        The returned data mimics real Bitaxe miner responses, including hashrate, power, temperatures, fan speed, voltages, share statistics, uptime, WiFi signal strength, pool information, ASIC model, board version, and firmware version. Values are randomized within realistic ranges to simulate operational variance.
+        
+        Parameters:
+            miner_config: The configuration object for the simulated miner.
+        
+        Returns:
+            dict: Simulated miner metrics with realistic variance.
+        """
         miner_name = miner_config.name
         
         # Simulate some variance in hashrate
@@ -76,11 +89,20 @@ class DemoMetricsCollector(MetricsCollector):
     """Demo metrics collector with simulated API"""
     
     def __init__(self, expected_hashrates=None, data_dir="data"):
+        """
+        Initialize the DemoMetricsCollector with simulated miner data sources.
+        
+        Overrides the base metrics collector to use the DemoMinerAPI for generating synthetic miner metrics instead of querying real hardware.
+        """
         super().__init__(expected_hashrates, data_dir)
         self.api = DemoMinerAPI()  # Use demo API instead of real one
 
 def main():
-    """Run demo mode monitor"""
+    """
+    Starts the Bitaxe Monitor in demo mode, simulating three miners with realistic variance data for testing enhanced variance monitoring features.
+    
+    This function initializes simulated miner configurations, sets up demo components including metrics collector, data logger, display, and web server, and enters a loop that periodically collects, displays, and logs simulated metrics. The demo runs until interrupted by the user, providing a full-featured test environment without requiring actual mining hardware.
+    """
     print("=" * 80)
     print("BITAXE MONITOR - ENHANCED VARIANCE TRACKING - DEMO MODE")
     print("=" * 80)

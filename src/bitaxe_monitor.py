@@ -2022,6 +2022,9 @@ class WebServer:
         self.setup_routes()
     
     def setup_routes(self):
+        """
+        Defines all Flask routes for the web server, including the main dashboard, API endpoints for metrics, historical data, variance analytics, variance reports, variance summaries, and a debug page for testing API endpoints.
+        """
         @self.app.route('/')
         def index():
             return render_template_string(HTML_TEMPLATE)
@@ -2117,7 +2120,11 @@ class WebServer:
         
         @self.app.route('/api/variance/summary')
         def api_variance_summary():
-            """Get variance summary for all miners"""
+            """
+            Return a summary of variance and stability metrics for all online miners as a JSON response.
+            
+            The summary includes a calculated stability score, efficiency percentage, current deviation from expected hashrate, and variance values over 60s, 300s, and 600s windows for each miner.
+            """
             try:
                 metrics = self.collector.get_latest_metrics()
                 summary = {}
@@ -2157,7 +2164,9 @@ class WebServer:
         
         @self.app.route('/debug')
         def debug_page():
-            """Serve debug page to test API endpoints"""
+            """
+            Serves a debug page for testing API endpoints, displaying either the contents of 'debug_web.html' or a fallback page that fetches and shows API metrics.
+            """
             try:
                 with open('debug_web.html', 'r', encoding='utf-8') as f:
                     return f.read()
@@ -2178,7 +2187,9 @@ class WebServer:
                 '''
     
     def run(self):
-        """Run the web server in a separate thread"""
+        """
+        Starts the web server in a background thread and prints URLs for accessing the web interface.
+        """
         def run_server():
             self.app.run(host=self.host, port=self.port, debug=False, threaded=True)
         
