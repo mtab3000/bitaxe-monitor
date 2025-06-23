@@ -2014,6 +2014,11 @@ class WebServer:
     """Flask web server for displaying metrics"""
     
     def __init__(self, collector, csv_filename, host='0.0.0.0', port=8080):
+        """
+        Initialize the WebServer with a metrics collector, CSV filename, host, and port.
+        
+        Sets up the Flask application and defines API and dashboard routes for monitoring Bitaxe miners.
+        """
         self.app = Flask(__name__)
         self.collector = collector
         self.csv_filename = csv_filename
@@ -2023,10 +2028,23 @@ class WebServer:
     
     def setup_routes(self):
         """
-        Defines all Flask routes for the web server, including the main dashboard, API endpoints for metrics, historical data, variance analytics, variance reports, variance summaries, and a debug page for testing API endpoints.
+        Defines all Flask routes for the web server, including:
+        
+        - The main dashboard (`/`)
+        - API endpoints for:
+          - Latest metrics and fleet summary (`/api/metrics`)
+          - Historical data for a specific miner (`/api/history/<miner_name>`)
+          - Debugging raw history and efficiency data (`/api/debug/<miner_name>`)
+          - Enhanced variance analytics for a miner (`/api/variance/analytics/<miner_name>`)
+          - Generating and returning variance reports (`/api/variance/report/<miner_name>`)
+          - Variance and stability summary for all online miners (`/api/variance/summary`)
+        - A debug page for testing API endpoints (`/debug`)
         """
         @self.app.route('/')
         def index():
+            """
+            Serves the main dashboard page with real-time miner metrics and charts.
+            """
             return render_template_string(HTML_TEMPLATE)
         
         @self.app.route('/api/metrics')
@@ -2121,9 +2139,9 @@ class WebServer:
         @self.app.route('/api/variance/summary')
         def api_variance_summary():
             """
-            Return a summary of variance and stability metrics for all online miners as a JSON response.
+            Return a JSON summary of variance and stability metrics for all online miners.
             
-            The summary includes a calculated stability score, efficiency percentage, current deviation from expected hashrate, and variance values over 60s, 300s, and 600s windows for each miner.
+            The response includes, for each miner, a calculated stability score, efficiency percentage, current deviation from expected hashrate, and variance values over 60s, 300s, and 600s time windows. The JSON object contains a timestamp and a dictionary of miner summaries keyed by miner name.
             """
             try:
                 metrics = self.collector.get_latest_metrics()
@@ -2165,7 +2183,7 @@ class WebServer:
         @self.app.route('/debug')
         def debug_page():
             """
-            Serves a debug page for testing API endpoints, displaying either the contents of 'debug_web.html' or a fallback page that fetches and shows API metrics.
+            Serve a debug web page for testing API endpoints, displaying either the contents of 'debug_web.html' if available or a fallback page that fetches and displays API metrics.
             """
             try:
                 with open('debug_web.html', 'r', encoding='utf-8') as f:
@@ -2188,9 +2206,12 @@ class WebServer:
     
     def run(self):
         """
-        Starts the web server in a background thread and prints URLs for accessing the web interface.
+        Start the web server in a background thread and display URLs for accessing the web dashboard locally and over the LAN.
         """
         def run_server():
+            """
+            Start the Flask web server on the specified host and port with threading enabled.
+            """
             self.app.run(host=self.host, port=self.port, debug=False, threaded=True)
         
         server_thread = threading.Thread(target=run_server, daemon=True)

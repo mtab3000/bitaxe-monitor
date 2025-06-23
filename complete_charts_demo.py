@@ -419,7 +419,9 @@ COMPLETE_HTML = '''
 class CompleteDemo:
     def __init__(self):
         """
-        Initialize the CompleteDemo web application, set up Flask routes, define base hashrates for demo miners, record the application start time, and prepare history buffers for variance calculations.
+        Initialize the CompleteDemo web application, configuring demo miners, application state, and Flask routes.
+        
+        Creates a Flask app instance, sets up HTTP routes, defines base hashrates for simulated miners, records the application start time, and initializes rolling history buffers for variance calculations.
         """
         self.app = Flask(__name__)
         self.setup_routes()
@@ -429,20 +431,23 @@ class CompleteDemo:
     
     def setup_routes(self):
         """
-        Register the Flask routes for the web interface and API endpoints.
+        Register Flask routes for serving the web interface and providing mining fleet metrics.
         
-        Defines the root route `'/'` to serve the main HTML page and the `'/api/metrics'` route to provide simulated miner metrics as JSON, including real-time hashrate, power, temperature, efficiency, and multi-window variance statistics for each miner.
+        Defines the root route `'/'` to serve the main HTML dashboard and the `'/api/metrics'` route to return simulated real-time miner and fleet statistics as JSON, including hashrate, power, temperature, efficiency, and multi-window variance metrics.
         """
         @self.app.route('/')
         def index():
+            """
+            Serves the main web interface for the mining fleet variance monitoring dashboard.
+            """
             return render_template_string(COMPLETE_HTML)
         
         @self.app.route('/api/metrics')
         def api_metrics():
             """
-            Generate and return simulated mining fleet metrics, including per-miner statistics and aggregated fleet data, as a JSON response.
+            Simulate and return current mining fleet metrics as a JSON response.
             
-            The response includes real-time hashrate, power, efficiency, temperature, frequency, uptime, and multi-window hashrate variance metrics for each miner, as well as fleet-wide totals and efficiency.
+            The response includes real-time statistics for each miner—such as hashrate, expected hashrate, efficiency percentage, power, temperature, frequency, uptime, and standard deviation of hashrate over 60s, 300s, and 600s windows—along with aggregated fleet totals and efficiency.
             """
             miners = []
             total_hashrate = 0
@@ -512,7 +517,7 @@ class CompleteDemo:
     
     def run(self):
         """
-        Starts the enhanced variance monitor web application and serves the real-time monitoring interface on port 8080.
+        Launches the variance monitoring web application and serves the real-time dashboard on port 8080.
         """
         print("=" * 80)
         print("COMPLETE ENHANCED VARIANCE MONITOR WITH CHARTS")

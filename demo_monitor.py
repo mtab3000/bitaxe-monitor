@@ -28,7 +28,7 @@ class DemoMinerAPI:
     
     def __init__(self):
         """
-        Initialize the DemoMinerAPI with base hashrates for simulated miners and record the start time.
+        Initialize the DemoMinerAPI with predefined base hashrates for simulated miners and set the simulation start time.
         """
         self.base_hashrates = {
             'Demo-Gamma-1': 1200,
@@ -39,15 +39,15 @@ class DemoMinerAPI:
     
     def get_system_info(self, miner_config, timeout=5):
         """
-        Generate and return a dictionary of simulated miner metrics for a given miner configuration.
+        Simulate and return miner metrics for a given configuration, mimicking real Bitaxe miner responses.
         
-        The returned data mimics real Bitaxe miner responses, including hashrate, power, temperatures, fan speed, voltages, share statistics, uptime, WiFi signal strength, pool information, ASIC model, board version, and firmware version. Values are randomized within realistic ranges to simulate operational variance.
+        The returned dictionary includes randomized values for hashrate, power, temperatures, fan speed, voltages, share statistics, uptime, WiFi signal strength, pool information, ASIC model, board version, and firmware version to reflect realistic operational variance.
         
         Parameters:
             miner_config: The configuration object for the simulated miner.
         
         Returns:
-            dict: Simulated miner metrics with realistic variance.
+            dict: Dictionary of simulated miner metrics with realistic variance.
         """
         miner_name = miner_config.name
         
@@ -90,18 +90,18 @@ class DemoMetricsCollector(MetricsCollector):
     
     def __init__(self, expected_hashrates=None, data_dir="data"):
         """
-        Initialize the DemoMetricsCollector with simulated miner data sources.
+        Initialize the DemoMetricsCollector to collect simulated miner metrics using the DemoMinerAPI.
         
-        Overrides the base metrics collector to use the DemoMinerAPI for generating synthetic miner metrics instead of querying real hardware.
+        Overrides the base collector to generate synthetic data for demo purposes instead of querying actual miners.
         """
         super().__init__(expected_hashrates, data_dir)
         self.api = DemoMinerAPI()  # Use demo API instead of real one
 
 def main():
     """
-    Starts the Bitaxe Monitor in demo mode, simulating three miners with realistic variance data for testing enhanced variance monitoring features.
+    Runs the Bitaxe Monitor in demo mode, simulating three miners to test enhanced variance monitoring features.
     
-    This function initializes simulated miner configurations, sets up demo components including metrics collector, data logger, display, and web server, and enters a loop that periodically collects, displays, and logs simulated metrics. The demo runs until interrupted by the user, providing a full-featured test environment without requiring actual mining hardware.
+    Initializes simulated miner configurations and demo components, including a metrics collector, data logger, display, and web server. Periodically collects, displays, and logs synthetic miner metrics, providing a full-featured test environment for variance analytics without requiring actual mining hardware. The demo continues until interrupted by the user.
     """
     print("=" * 80)
     print("BITAXE MONITOR - ENHANCED VARIANCE TRACKING - DEMO MODE")

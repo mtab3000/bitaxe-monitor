@@ -465,7 +465,7 @@ PERSISTENT_CHARTS_HTML = '''
 class FixedDemo:
     def __init__(self):
         """
-        Initialize the FixedDemo web application, setting up the Flask app, mining baseline hashrates, server start time, and historical data buffers for variance tracking.
+        Initialize the FixedDemo web application, configuring the Flask app, baseline hashrates, server start time, and historical buffers for miner variance tracking.
         """
         self.app = Flask(__name__)
         self.setup_routes()
@@ -475,20 +475,23 @@ class FixedDemo:
     
     def setup_routes(self):
         """
-        Defines the Flask routes for the mining monitor web application.
+        Define the Flask routes for serving the mining monitor dashboard and providing mining metrics.
         
-        The root route ('/') serves the main dashboard HTML page with embedded JavaScript and CSS for real-time monitoring. The '/api/metrics' route returns a JSON response containing simulated mining metrics for each miner, including current hashrate, efficiency, power, temperature, frequency, uptime, and variance statistics over multiple time windows. The metrics endpoint also provides fleet-wide totals and efficiency calculations.
+        The root route ('/') serves the persistent real-time dashboard HTML page. The '/api/metrics' route returns a JSON response with simulated per-miner and fleet-wide statistics, including hashrate, efficiency, power, temperature, uptime, and multi-window variance metrics.
         """
         @self.app.route('/')
         def index():
+            """
+            Serves the main dashboard page with persistent real-time mining charts.
+            """
             return render_template_string(PERSISTENT_CHARTS_HTML)
         
         @self.app.route('/api/metrics')
         def api_metrics():
             """
-            Generate and return simulated mining metrics for all miners as a JSON response.
+            Simulate and return mining metrics for all miners as a JSON response.
             
-            The response includes per-miner statistics such as current hashrate, expected hashrate, efficiency, power, temperature, frequency, uptime, and standard deviation of hashrate over 60s, 300s, and 600s windows. Fleet-wide totals and efficiency are also provided.
+            The response includes per-miner statistics such as current and expected hashrate (GH/s and TH/s), efficiency percentage, power consumption, temperature, frequency, uptime, and standard deviation of hashrate over 60s, 300s, and 600s intervals. Fleet-wide totals for hashrate, power, and efficiency are also provided.
             """
             miners = []
             total_hashrate = 0
@@ -559,7 +562,7 @@ class FixedDemo:
     
     def run(self):
         """
-        Starts the Flask web server for the mining monitor dashboard and prints startup information about available features and access details.
+        Launches the mining monitor dashboard web server and displays startup information about persistent chart features and access instructions.
         """
         print("=" * 80)
         print("FIXED ENHANCED VARIANCE MONITOR - CHARTS NEVER DISAPPEAR")

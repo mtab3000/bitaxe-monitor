@@ -559,7 +559,7 @@ WORKING_HTML = '''
 class WorkingDemo:
     def __init__(self):
         """
-        Initialize the WorkingDemo application with Flask, baseline miner hashrates, start time, and history buffers for variance tracking.
+        Initialize the WorkingDemo instance, setting up the Flask app, baseline miner hashrates, start time, and history buffers for simulated variance tracking.
         """
         self.app = Flask(__name__)
         self.setup_routes()
@@ -569,12 +569,15 @@ class WorkingDemo:
     
     def setup_routes(self):
         """
-        Defines the Flask routes for the web interface and metrics API.
+        Define the Flask routes for serving the mining monitor web interface and providing simulated mining metrics via an API.
         
-        The root route ('/') serves the main HTML page for the mining monitor interface. The '/api/metrics' route generates and returns simulated mining metrics as JSON, including per-miner statistics (hashrate, power, temperature, uptime, and variance calculations) and fleet-wide aggregates.
+        The root route ('/') returns the main HTML page for the monitoring dashboard. The '/api/metrics' route generates and returns JSON-formatted mining metrics, including per-miner statistics (hashrate, power, temperature, uptime, and variance calculations) and fleet-wide aggregates for real-time visualization.
         """
         @self.app.route('/')
         def index():
+            """
+            Serves the main web interface for the Bitaxe Monitor application.
+            """
             return render_template_string(WORKING_HTML)
         
         @self.app.route('/api/metrics')
@@ -583,7 +586,7 @@ class WorkingDemo:
             """
             Simulate and return current mining fleet metrics and variance statistics as a JSON response.
             
-            Generates realistic, time-varying performance data for each miner, including hashrate with variance, power, temperature, frequency, uptime, and standard deviation of hashrate over 60s, 300s, and 600s intervals. Aggregates fleet-wide totals and efficiency, and returns all data in a structured JSON format suitable for real-time monitoring dashboards.
+            Generates time-varying performance data for each miner, including hashrate with variance, power, temperature, frequency, uptime, and standard deviation of hashrate over 60s, 300s, and 600s intervals. Aggregates fleet-wide totals and efficiency, and returns all data in a structured JSON format suitable for real-time monitoring dashboards.
             """
             miners = []
             total_hashrate = 0
@@ -653,7 +656,7 @@ class WorkingDemo:
     
     def run(self):
         """
-        Starts the Flask web server for the Bitaxe Monitor demo and prints startup instructions and feature highlights to the console.
+        Launches the Bitaxe Monitor demo web server and displays feature highlights and usage instructions in the console.
         """
         print("=" * 80)
         print("WORKING BITAXE MONITOR - ENHANCED VARIANCE TRACKING WITH CHARTS")
