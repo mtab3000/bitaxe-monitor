@@ -83,7 +83,7 @@ class BitAxeAPI:
 class VarianceTracker:
     """Tracks variance data for multiple time windows"""
     
-    def __init__(self, maxlen=20):  # 10 minutes of data at 30-second intervals (20 * 30s = 600s)
+    def __init__(self, maxlen=2880):  # 24 hours of data at 30-second intervals (2880 * 30s = 86400s = 24h)
         self.data = deque(maxlen=maxlen)
         self.timestamps = deque(maxlen=maxlen)
     
@@ -297,10 +297,16 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
         .charts-section { margin-top: 20px; }
         .chart-container { margin-bottom: 15px; }
         .chart-title { font-weight: bold; margin-bottom: 5px; font-size: 12px; color: #2c3e50; }
+        .chart-controls { margin-bottom: 8px; display: flex; gap: 5px; flex-wrap: wrap; }
+        .time-btn { padding: 3px 8px; font-size: 10px; border: 1px solid #ddd; background: white; cursor: pointer; border-radius: 3px; }
+        .time-btn.active { background: #3498db; color: white; border-color: #3498db; }
+        .time-btn:hover { background: #ecf0f1; }
+        .time-btn.active:hover { background: #2980b9; }
         .chart-box { height: 180px; background: white; border: 1px solid #ddd; border-radius: 4px; padding: 8px; }
         .footer { text-align: center; margin-top: 40px; color: #7f8c8d; font-size: 12px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head><body>
     <div class="container">
         <h1>BitAxe Monitor - Enhanced Variance Tracking</h1>
@@ -311,7 +317,9 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
     </div>
 
     <script>
-        const charts = {}; const chartData = {}; const maxDataPoints = 20;
+        const charts = {}; const chartData = {}; 
+        let currentTimeRange = 30; // Default 30 minutes
+        const maxStorageTime = 1440; // Store up to 24 hours of data
         
         function getEfficiencyClass(percentage) {
             if (percentage >= 95) return 'efficiency-high';
@@ -325,31 +333,43 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
             
             let config = {
                 type: 'line',
-                data: { labels: [new Date().toLocaleTimeString()], datasets: [] },
+                data: { labels: [], datasets: [] },
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     plugins: { legend: { display: true, position: 'top', labels: { font: { size: 10 } } } },
-                    scales: { x: { ticks: { font: { size: 9 }, maxTicksLimit: 5 } }, y: { ticks: { font: { size: 9 } } } },
+                    scales: { 
+                        x: { 
+                            ticks: { font: { size: 9 }, maxTicksLimit: 8 },
+                            type: 'time',
+                            time: {
+                                displayFormats: {
+                                    minute: 'HH:mm',
+                                    hour: 'HH:mm'
+                                }
+                            }
+                        }, 
+                        y: { ticks: { font: { size: 9 } } } 
+                    },
                     animation: { duration: 300 }
                 }
             };
             
             switch(chartType) {
                 case 'hashrate':
-                    config.data.datasets = [{ label: 'Hashrate (GH/s)', data: [0], borderColor: 'rgb(75, 192, 192)', backgroundColor: 'rgba(75, 192, 192, 0.1)', tension: 0.3, fill: true }];
+                    config.data.datasets = [{ label: 'Hashrate (GH/s)', data: [], borderColor: 'rgb(75, 192, 192)', backgroundColor: 'rgba(75, 192, 192, 0.1)', tension: 0.3, fill: true }];
                     break;
                 case 'directional':
                     config.data.datasets = [
-                        { label: 'Expected Baseline', data: [expectedValue], borderColor: 'rgb(128, 128, 128)', borderDash: [5, 5], fill: false, pointRadius: 0 },
-                        { label: 'Actual Hashrate', data: [0], borderColor: 'rgb(54, 162, 235)', fill: false }
+                        { label: 'Expected Baseline', data: [], borderColor: 'rgb(128, 128, 128)', borderDash: [5, 5], fill: false, pointRadius: 0 },
+                        { label: 'Actual Hashrate', data: [], borderColor: 'rgb(54, 162, 235)', fill: false }
                     ];
                     break;
                 case 'efficiency':
-                    config.data.datasets = [{ label: 'Efficiency (%)', data: [0], borderColor: 'rgb(255, 99, 132)', backgroundColor: 'rgba(255, 99, 132, 0.1)', tension: 0.3, fill: true }];
+                    config.data.datasets = [{ label: 'Efficiency (%)', data: [], borderColor: 'rgb(255, 99, 132)', backgroundColor: 'rgba(255, 99, 132, 0.1)', tension: 0.3, fill: true }];
                     config.options.scales.y.suggestedMin = 85; config.options.scales.y.suggestedMax = 115;
                     break;
                 case 'variance':
-                    config.data.datasets = [{ label: 'Std Dev (GH/s)', data: [0], borderColor: 'rgb(153, 102, 255)', backgroundColor: 'rgba(153, 102, 255, 0.1)', tension: 0.3, fill: true }];
+                    config.data.datasets = [{ label: 'Std Dev (GH/s)', data: [], borderColor: 'rgb(153, 102, 255)', backgroundColor: 'rgba(153, 102, 255, 0.1)', tension: 0.3, fill: true }];
                     config.options.scales.y.beginAtZero = true;
                     break;
             }
@@ -359,37 +379,102 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
             return charts[chartKey];
         }
         
-        function updateChart(minerName, data) {
-            const currentTime = new Date().toLocaleTimeString();
+        function getTimeRangeData(minerName, timeRangeMinutes) {
+            if (!chartData[minerName]) return { times: [], hashrate: [], efficiency: [], variance: [] };
             
-            if (!chartData[minerName]) {
-                chartData[minerName] = { times: [], hashrate: [], efficiency: [], variance: [], expected: data.expected_hashrate_gh };
+            const now = new Date();
+            let cutoffTime;
+            
+            if (timeRangeMinutes === 'today') {
+                cutoffTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            } else {
+                cutoffTime = new Date(now.getTime() - (timeRangeMinutes * 60 * 1000));
             }
             
-            chartData[minerName].times.push(currentTime);
-            chartData[minerName].hashrate.push(data.hashrate_gh);
-            chartData[minerName].efficiency.push(data.hashrate_efficiency_pct);
-            chartData[minerName].variance.push(data.hashrate_stddev_60s || 0);
+            const data = chartData[minerName];
+            const filteredData = { times: [], hashrate: [], efficiency: [], variance: [] };
             
-            if (chartData[minerName].times.length > maxDataPoints) {
-                chartData[minerName].times.shift(); chartData[minerName].hashrate.shift();
-                chartData[minerName].efficiency.shift(); chartData[minerName].variance.shift();
+            for (let i = 0; i < data.timestamps.length; i++) {
+                if (data.timestamps[i] >= cutoffTime) {
+                    filteredData.times.push(data.timestamps[i]);
+                    filteredData.hashrate.push(data.hashrate[i]);
+                    filteredData.efficiency.push(data.efficiency[i]);
+                    filteredData.variance.push(data.variance[i]);
+                }
             }
+            
+            return filteredData;
+        }
+        
+        function updateChartTimeRange(minerName, timeRangeMinutes) {
+            const data = getTimeRangeData(minerName, timeRangeMinutes);
             
             ['hashrate', 'directional', 'efficiency', 'variance'].forEach(type => {
                 const chart = charts[minerName + '_' + type];
                 if (chart) {
-                    chart.data.labels = chartData[minerName].times;
-                    if (type === 'hashrate') chart.data.datasets[0].data = chartData[minerName].hashrate;
-                    else if (type === 'directional') {
-                        chart.data.datasets[0].data = new Array(chartData[minerName].times.length).fill(chartData[minerName].expected);
-                        chart.data.datasets[1].data = chartData[minerName].hashrate;
+                    chart.data.labels = data.times;
+                    if (type === 'hashrate') {
+                        chart.data.datasets[0].data = data.hashrate.map((val, idx) => ({ x: data.times[idx], y: val }));
+                    } else if (type === 'directional') {
+                        const expectedValue = chartData[minerName].expected;
+                        chart.data.datasets[0].data = data.times.map(time => ({ x: time, y: expectedValue }));
+                        chart.data.datasets[1].data = data.hashrate.map((val, idx) => ({ x: data.times[idx], y: val }));
+                    } else if (type === 'efficiency') {
+                        chart.data.datasets[0].data = data.efficiency.map((val, idx) => ({ x: data.times[idx], y: val }));
+                    } else if (type === 'variance') {
+                        chart.data.datasets[0].data = data.variance.map((val, idx) => ({ x: data.times[idx], y: val }));
                     }
-                    else if (type === 'efficiency') chart.data.datasets[0].data = chartData[minerName].efficiency;
-                    else if (type === 'variance') chart.data.datasets[0].data = chartData[minerName].variance;
                     chart.update('none');
                 }
             });
+        }
+        
+        function setTimeRange(minerName, timeRangeMinutes) {
+            currentTimeRange = timeRangeMinutes;
+            
+            // Update button states
+            const minerIdSafe = minerName.replace(/[^a-zA-Z0-9]/g, '');
+            document.querySelectorAll(`[data-miner="${minerIdSafe}"] .time-btn`).forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`[data-miner="${minerIdSafe}"] .time-btn[data-range="${timeRangeMinutes}"]`).classList.add('active');
+            
+            updateChartTimeRange(minerName, timeRangeMinutes);
+        }
+        
+        function updateChart(minerName, data) {
+            const currentTime = new Date();
+            
+            if (!chartData[minerName]) {
+                chartData[minerName] = { 
+                    timestamps: [], 
+                    hashrate: [], 
+                    efficiency: [], 
+                    variance: [], 
+                    expected: data.expected_hashrate_gh 
+                };
+            }
+            
+            // Add new data point
+            chartData[minerName].timestamps.push(currentTime);
+            chartData[minerName].hashrate.push(data.hashrate_gh);
+            chartData[minerName].efficiency.push(data.hashrate_efficiency_pct);
+            chartData[minerName].variance.push(data.hashrate_stddev_60s || 0);
+            
+            // Keep only data within max storage time (24 hours)
+            const maxAge = maxStorageTime * 60 * 1000; // Convert to milliseconds
+            const cutoffTime = currentTime.getTime() - maxAge;
+            
+            while (chartData[minerName].timestamps.length > 0 && 
+                   chartData[minerName].timestamps[0].getTime() < cutoffTime) {
+                chartData[minerName].timestamps.shift();
+                chartData[minerName].hashrate.shift();
+                chartData[minerName].efficiency.shift();
+                chartData[minerName].variance.shift();
+            }
+            
+            // Update charts with current time range
+            updateChartTimeRange(minerName, currentTimeRange);
         }
         
         let isInitialized = false;
@@ -408,7 +493,17 @@ ENHANCED_HTML_TEMPLATE = '''<!DOCTYPE html>
                         '<div class="miner-header"><div class="miner-name">' + miner.miner_name + '</div><div class="miner-status status-online" id="status-' + minerIdSafe + '">ONLINE</div></div>' +
                         '<div id="metrics-' + minerIdSafe + '"></div>' +
                         '<div class="variance-section" id="variance-' + minerIdSafe + '"></div>' +
-                        '<div class="charts-section">' +
+                        '<div class="charts-section" data-miner="' + minerIdSafe + '">' +
+                        '<div class="chart-controls">' +
+                        '<button class="time-btn" data-range="15" onclick="setTimeRange(\'' + miner.miner_name + '\', 15)">15m</button>' +
+                        '<button class="time-btn active" data-range="30" onclick="setTimeRange(\'' + miner.miner_name + '\', 30)">30m</button>' +
+                        '<button class="time-btn" data-range="60" onclick="setTimeRange(\'' + miner.miner_name + '\', 60)">1h</button>' +
+                        '<button class="time-btn" data-range="180" onclick="setTimeRange(\'' + miner.miner_name + '\', 180)">3h</button>' +
+                        '<button class="time-btn" data-range="360" onclick="setTimeRange(\'' + miner.miner_name + '\', 360)">6h</button>' +
+                        '<button class="time-btn" data-range="720" onclick="setTimeRange(\'' + miner.miner_name + '\', 720)">12h</button>' +
+                        '<button class="time-btn" data-range="1440" onclick="setTimeRange(\'' + miner.miner_name + '\', 1440)">24h</button>' +
+                        '<button class="time-btn" data-range="today" onclick="setTimeRange(\'' + miner.miner_name + '\', \'today\')">Today</button>' +
+                        '</div>' +
                         '<div class="chart-container"><div class="chart-title">Real-time Hashrate</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-hashrate"></canvas></div></div>' +
                         '<div class="chart-container"><div class="chart-title">Directional Variance (vs Expected Baseline)</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-directional"></canvas></div></div>' +
                         '<div class="chart-container"><div class="chart-title">Efficiency Tracking</div><div class="chart-box"><canvas id="chart-' + minerIdSafe + '-efficiency"></canvas></div></div>' +
