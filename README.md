@@ -52,12 +52,25 @@ miners_config = [
 ]
 ```
 
-### **2. Install Dependencies**
+### **2. Set up Python Virtual Environment (Recommended)**
 ```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+# On Windows:
+.venv\Scripts\activate
+# On macOS/Linux:
+source .venv/bin/activate
+```
+
+### **3. Install Dependencies**
+```bash
+# Make sure virtual environment is activated first!
 pip install -r requirements.txt
 ```
 
-### **3. Run the Monitor**
+### **4. Run the Monitor**
 
 **Console Mode (NEW!):**
 ```bash
@@ -73,9 +86,14 @@ python enhanced_bitaxe_monitor.py
 python enhanced_bitaxe_monitor.py --port 8090
 ```
 
-### **4. Access Dashboard**
+### **5. Access Dashboard**
 - **Web Interface**: `http://localhost:8080`
 - **Console Interface**: Live terminal output with 30s updates
+
+### **6. Deactivate Virtual Environment (When Done)**
+```bash
+deactivate
+```
 
 ## 📊 **Chart Features**
 

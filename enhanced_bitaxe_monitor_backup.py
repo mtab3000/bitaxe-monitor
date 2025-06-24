@@ -98,15 +98,6 @@ class EnhancedBitAxeMonitor:
             response = requests.get(f'http://{miner.ip}/api/system/info', timeout=5)
             response.raise_for_status()
             data = response.json()
-            
-            # Debug: Log the raw API response to understand available fields
-            if hasattr(self, '_debug_logged') is False:
-                self._debug_logged = True
-                logging.info(f"Raw API response from {miner.name}: {data}")
-                print(f"\n🔍 DEBUG: Raw API fields from {miner.name}:")
-                for key, value in data.items():
-                    print(f"  {key}: {value}")
-                print("\n")
             if self.console_mode:
                 print(f"[DEBUG] Fetched data from {miner.name} ({miner.ip}): {data}")
             return data
@@ -134,50 +125,9 @@ class EnhancedBitAxeMonitor:
             power_w = float(raw_data.get('power', 0))
             temperature_c = float(raw_data.get('temp', 0))
             frequency_mhz = float(raw_data.get('frequency', 600))
-            # Correct voltage fields for ASIC core voltage
-            # Check different possible field names in the API response
-            voltage_mv = 0  # Measured ASIC voltage in millivolts
-            set_voltage_mv = 0  # Set ASIC voltage in millivolts
-            
-            # Try to get measured voltage (convert to mV if in V)
-            if 'coreVoltageActual' in raw_data:
-                voltage_mv = float(raw_data['coreVoltageActual'])
-                if voltage_mv < 10:  # Likely in volts, convert to millivolts
-                    voltage_mv *= 1000
-            elif 'asicVoltage' in raw_data:
-                voltage_mv = float(raw_data['asicVoltage'])
-                if voltage_mv < 10:  # Likely in volts, convert to millivolts
-                    voltage_mv *= 1000
-            elif 'voltage' in raw_data:
-                voltage_mv = float(raw_data['voltage'])
-                if voltage_mv < 10:  # Likely in volts, convert to millivolts
-                    voltage_mv *= 1000
-            
-            # Try to get set voltage (convert to mV if in V)
-            if 'coreVoltage' in raw_data:
-                set_voltage_mv = float(raw_data['coreVoltage'])
-                if set_voltage_mv < 10:  # Likely in volts, convert to millivolts
-                    set_voltage_mv *= 1000
-            elif 'targetVoltage' in raw_data:
-                set_voltage_mv = float(raw_data['targetVoltage'])
-                if set_voltage_mv < 10:  # Likely in volts, convert to millivolts
-                    set_voltage_mv *= 1000
-            elif 'setVoltage' in raw_data:
-                set_voltage_mv = float(raw_data['setVoltage'])
-                if set_voltage_mv < 10:  # Likely in volts, convert to millivolts
-                    set_voltage_mv *= 1000
-            
-            # If still no voltage found, try to calculate from other fields
-            if voltage_mv == 0 and 'voltage' in raw_data:
-                voltage_mv = float(raw_data.get('voltage', 0)) * 1000
-            
-            # Fallback to default BitAxe voltage if nothing found (around 1050mV)
-            if set_voltage_mv == 0:
-                set_voltage_mv = 1050  # Default BitAxe voltage
-                
-            # Convert to volts for storage (but we'll display in mV in UI)
-            voltage_v = voltage_mv / 1000.0
-            set_voltage_v = set_voltage_mv / 1000.0
+            # Correct voltage fields for ASIC core voltage (try multiple possible field names)
+            voltage_v = float(raw_data.get('coreVoltage', raw_data.get('vCore', raw_data.get('asicVoltage', 0))))  # Measured ASIC voltage
+            set_voltage_v = float(raw_data.get('coreVoltageSet', raw_data.get('targetVoltage', raw_data.get('voltageSet', 0))))  # Set ASIC voltage
             uptime_s = int(raw_data.get('uptimeSeconds', 0))
             
             # Calculate dynamic expected hashrate based on frequency
@@ -367,7 +317,7 @@ class EnhancedBitAxeMonitor:
                       f"{efficiency_color}{miner['hashrate_efficiency_pct']:.1f}%      "
                       f"{miner['efficiency_j_th']:.2f}   "
                       f"{miner['frequency_mhz']:.0f}MHz  "
-                      f"{miner['voltage_v']*1000:.0f}mV "
+                      f"{miner['voltage_v']:.3f}V "
                       f"{miner['temperature_c']:.1f}°C")
             else:
                 print(f"{miner['miner_name']:<18} {status_icon} {miner['status']:<6} "
@@ -892,12 +842,7 @@ BEAUTIFUL_HTML_TEMPLATE = '''<!DOCTYPE html>
                                     },
                                     ticks: { 
                                         color: '#64748b',
-                                        font: { size: 11 },
-                                        maxTicksLimit: 8,  // Limit number of x-axis labels
-                                        maxRotation: 45,  // Rotate labels if needed
-                                        minRotation: 0,
-                                        autoSkip: true,  // Automatically skip labels to prevent overlap
-                                        autoSkipPadding: 10
+                                        font: { size: 11 }
                                     }
                                 },
                                 y: { 
@@ -986,7 +931,7 @@ BEAUTIFUL_HTML_TEMPLATE = '''<!DOCTYPE html>
                                     <canvas id="jth-chart-${minerIdSafe}"></canvas>
                                 </div>
                                 <div class="chart-container">
-                                    <div class="chart-title">⚡ ASIC Voltage</div>
+                                    <div class="chart-title">⚡ Voltage & Temperature</div>
                                     <canvas id="voltage-chart-${minerIdSafe}"></canvas>
                                 </div>
                             </div>
@@ -1057,11 +1002,11 @@ BEAUTIFUL_HTML_TEMPLATE = '''<!DOCTYPE html>
                     </div>
                     <div class="metric">
                         <span class="metric-label">Set Voltage</span>
-                        <span class="metric-value">${(miner.set_voltage_v * 1000).toFixed(0)} mV</span>
+                        <span class="metric-value">${miner.set_voltage_v.toFixed(3)}V</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">ASIC Voltage</span>
-                        <span class="metric-value">${(miner.voltage_v * 1000).toFixed(0)} mV</span>
+                        <span class="metric-label">Measured Voltage</span>
+                        <span class="metric-value">${miner.voltage_v.toFixed(3)}V</span>
                     </div>
                     <div class="metric">
                         <span class="metric-label">Temperature</span>
